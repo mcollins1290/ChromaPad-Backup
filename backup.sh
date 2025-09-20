@@ -35,13 +35,38 @@ dt=$(date -d @$s_timestamp '+%m/%d/%Y %H:%M:%S');
 printf "BACKUP PROCESS STARTED ON $dt\n"
 #
 
-# RSYNC ROOT to Backup Directory
-echo "Syncing Backup Directory with ROOT"
-rsync -aAXv --delete --exclude={"etc/fake-hwclock.data","/usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper","/boot/*","/dev/*","/proc/*","/sys/*","/tmp/*","/run/*","/mnt/*","/media/*","/lost+found","/var/swap","/var/tmp/*","/var/log/*","/var/log.hdd/*"} / $BACKUP_DIRECTORY #>& /dev/null
+# RSYNC Home to Backup Directory
+echo "Syncing home Directory to Backup Directory"
+rsync -aAXv --delete /home/ $BACKUP_DIRECTORY/home/ #>& /dev/null
 if [ $? -ne 0 ]; then
-	echo "ERROR: Failed to sync Backup Directory with ROOT."
+	echo "ERROR: Failed to rsync Home Directory to Backup folder."
 	exit 1
 fi
+#
+# RSYNC root to Backup Directory
+echo "Syncing root Directory to Backup Directory"
+rsync -aAXv --delete /root/ $BACKUP_DIRECTORY/root/ #>& /dev/null
+if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to rsync root Directory to Backup folder."
+        exit 1
+fi
+#
+# RSYNC fstab to Backup Directory
+echo "Syncing fstab to Backup Directory"
+rsync -aAXv /etc/fstab $BACKUP_DIRECTORY/etc/ #>& /dev/null
+if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to rsync fstab file to Backup folder."
+        exit 1
+fi
+#
+# RSYNC ssh to Backup Directory
+echo "Syncing ssh Directory to Backup Directory"
+rsync -aAXv --delete /etc/ssh/ $BACKUP_DIRECTORY/etc/ssh/ #>& /dev/null
+if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to rsync ssh Directory to Backup folder."
+        exit 1
+fi
+#
 
 #Run 'sync' to ensure all I/O activity is complete
 sync
