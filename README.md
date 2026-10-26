@@ -80,3 +80,22 @@ Python 3, Pillow, rsync and DejaVu Sans installed. This runs the 102 unit tests
 using temporary files and mocked device/service operations. It does not start
 a backup, restore the pad or power it off. Private-input integration tests are
 described in the [builder notes](debian_recovery/README.md).
+
+## Backup phase timing
+
+Rolling runs emit `TIMING_START` and `TIMING_END` lines in the service log,
+including elapsed seconds and `OK` or `FAILED`. The latest run also saves
+`/media/raid1/coprint/backup-info/phase-timings.json`, even after a handled
+failure. Timings use a monotonic clock; UTC start times help correlate logs.
+Nested phase durations overlap and must not be summed. `backup_work_total`
+covers image checks/initialization, capture and recovery finishing, including
+mount cleanup; it excludes readiness, report export and final activation.
+Capture details include firmware checks, rsync, the paused final copy,
+printer stop/capture/restart, trimming, runtime refresh, filesystem checks and
+payload hashing. Finish details separate packaging, validation and smoke tests.
+Abrupt power loss may prevent report export; timing lines already written to
+the journal may still be available. Reports are replaced by each run.
+
+These changes must be installed into both the controller and recovery builder
+before the normal launcher emits timings. Updating this checkout alone does
+not deploy them. The builder's tool manifest must accompany its changed files.

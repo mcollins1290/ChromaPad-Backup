@@ -12,12 +12,42 @@ from pathlib import Path
 import shutil
 import stat
 import struct
+import time
 import subprocess
 import uuid
 
 import chromapad_debian_backup as b
 import chromapad_recovery as r
 import recovery_build_common as c
+
+
+@contextlib.contextmanager
+def timed(stage, name):
+    """Record inclusive wall time, including failed phases, using a monotonic clock."""
+    started_utc = b.stamp()
+    start = time.monotonic()
+    status = 'FAILED'
+    print(f'TIMING_START {name}', flush=True)
+    try:
+        yield
+        status = 'OK'
+    finally:
+        seconds = round(time.monotonic() - start, 3)
+        print(f'TIMING_END {name} status={status} seconds={seconds:.3f}', flush=True)
+        # Diagnostics must never mask a backup failure or prevent service cleanup.
+        try:
+            path = stage / 'reports/phase-timings.json'
+            report = json.loads(path.read_text()) if path.exists() else {
+                'schema': 1, 'duration_clock': 'monotonic',
+                'note': 'Durations are inclusive; nested phases must not be added together.',
+                'phases': []}
+            report['phases'].append({'name': name, 'started_utc': started_utc,
+                                     'seconds': seconds, 'status': status})
+            pending = path.with_suffix('.pending')
+            b.record(pending, report)
+            os.replace(pending, path)
+        except Exception as exc:
+            print(f'TIMING_REPORT_ERROR {name}: {exc}', flush=True)
 
 
 def module(filename):
@@ -92,7 +122,7 @@ def check_filesystems(image, stage, repair=False):
 def mounted_payload(payload, stage):
     require_regular(payload, r.RAW_BYTES)
     b.require(not b.run('losetup', '-j', payload), 'Saved root filesystem already mounted')
-    with (stage / 'reports/root-fsck-before.txt').open('w') as log:
+    with timed(stage, 'payload_fsck_before'), (stage / 'reports/root-fsck-before.txt').open('w') as log:
         result = subprocess.run(['e2fsck', '-f', '-p', str(payload)], stdout=log, stderr=subprocess.STDOUT)
     b.require(result.returncode in (0, 1), 'Saved root filesystem needs manual inspection')
     b.require(b.run('blkid', '-p', '-c', '/dev/null', '-s', 'UUID', '-o', 'value', payload) == b.ROOT_UUID,
@@ -192,46 +222,53 @@ def capture(image, stage, m, printer_context):
                       '-U', b.ROOT_UUID, '-L', 'CP_DEBIAN_EMMC', '-m', '1', payload)
         require_regular(payload, r.RAW_BYTES)
         with mounted_payload(payload, stage) as saved:
-            with printer_context():
+            with timed(stage, 'printer_stop_capture_and_restart'), printer_context():
                 identity = b.source_identity()
-                for start, end in b.RANGES:
-                    b.require(b.digest(identity['disk'], start, end - start) == reference[f'{start}:{end}'],
-                              'Protected firmware reference differs')
-                for suffix in ('boot0', 'boot1'):
-                    b.require(b.digest(identity['disk'] + suffix) == reference[suffix], 'Hardware boot reference differs')
+                with timed(stage, 'protected_firmware_checks'):
+                    for start, end in b.RANGES:
+                        b.require(b.digest(identity['disk'], start, end - start) == reference[f'{start}:{end}'],
+                                  'Protected firmware reference differs')
+                    for suffix in ('boot0', 'boot1'):
+                        b.require(b.digest(identity['disk'] + suffix) == reference[suffix], 'Hardware boot reference differs')
                 b.phase(stage, 'Updating the saved system inside the recovery image')
-                copy_system(Path('/'), saved, stage / 'reports/rsync-initial.txt', allow_vanished=True)
-                with b.quiesced(stage):
-                    b.phase(stage, 'Final consistent copy; application writers are paused')
-                    copy_system(Path('/'), saved, stage / 'reports/rsync-final.txt')
-                    bootfat = inputs / 'fat'
-                    bootfat.mkdir()
-                    b.command('rsync', '-rt', '--delete', '--modify-window=1', '/boot/emmc/', str(bootfat) + '/')
-                    comparison = b.comparison_result(b.run(*b.RSYNC, '--dry-run', '--itemize-changes', '/', str(saved) + '/'))
-                    b.record(stage / 'reports/root-comparison.json', comparison)
-                    b.require(not comparison['blocking'], 'Source changed during the final copy')
-                    b.require(not b.run('rsync', '-rcn', '--delete', '--itemize-changes', '/boot/emmc/', str(bootfat) + '/'), 'Boot copy differs')
-                    boot = b.validate_boot(bootfat, saved)
-                    b.require(b.source_identity() == identity, 'Source boot changed during backup')
-                    shutil.copytree(saved / 'usr/lib/chromapad/emmc', inputs / 'helpers')
-                    m['kernel'] = json.loads((saved / 'usr/lib/chromapad/emmc/identifiers.json').read_text())['kernel']
-                    shutil.copytree(bootfat / 'debian' / boot['generation'], inputs / 'emmc-boot')
-                    shutil.copyfile(saved / 'boot' / ('initrd.img-' + m['kernel']), inputs / 'initrd.raw')
-                    b.require((saved / 'usr/lib/python3/dist-packages/PIL/Image.py').is_file(), 'Recovery display library missing')
-                    policy = saved / 'etc/tmpfiles.d/chromapad-nginx-logs.conf'
-                    b.require(policy.is_file() and 'd /var/log/nginx 0755 root adm -' in policy.read_text(), 'nginx log recovery policy missing')
-                    b.command('sync', '-f', saved)
+                with timed(stage, 'initial_rsync'):
+                    copy_system(Path('/'), saved, stage / 'reports/rsync-initial.txt', allow_vanished=True)
+                with timed(stage, 'quiesced_final_copy_and_comparison'):
+                    with b.quiesced(stage):
+                        b.phase(stage, 'Final consistent copy; application writers are paused')
+                        copy_system(Path('/'), saved, stage / 'reports/rsync-final.txt')
+                        bootfat = inputs / 'fat'
+                        bootfat.mkdir()
+                        b.command('rsync', '-rt', '--delete', '--modify-window=1', '/boot/emmc/', str(bootfat) + '/')
+                        comparison = b.comparison_result(b.run(*b.RSYNC, '--dry-run', '--itemize-changes', '/', str(saved) + '/'))
+                        b.record(stage / 'reports/root-comparison.json', comparison)
+                        b.require(not comparison['blocking'], 'Source changed during the final copy')
+                        b.require(not b.run('rsync', '-rcn', '--delete', '--itemize-changes', '/boot/emmc/', str(bootfat) + '/'), 'Boot copy differs')
+                        boot = b.validate_boot(bootfat, saved)
+                        b.require(b.source_identity() == identity, 'Source boot changed during backup')
+                        shutil.copytree(saved / 'usr/lib/chromapad/emmc', inputs / 'helpers')
+                        m['kernel'] = json.loads((saved / 'usr/lib/chromapad/emmc/identifiers.json').read_text())['kernel']
+                        shutil.copytree(bootfat / 'debian' / boot['generation'], inputs / 'emmc-boot')
+                        shutil.copyfile(saved / 'boot' / ('initrd.img-' + m['kernel']), inputs / 'initrd.raw')
+                        b.require((saved / 'usr/lib/python3/dist-packages/PIL/Image.py').is_file(), 'Recovery display library missing')
+                        policy = saved / 'etc/tmpfiles.d/chromapad-nginx-logs.conf'
+                        b.require(policy.is_file() and 'd /var/log/nginx 0755 root adm -' in policy.read_text(), 'nginx log recovery policy missing')
+                        b.command('sync', '-f', saved)
                 b.record(stage / 'reports/source.json', identity)
             # Klipper and application services are restored before offline work.
             b.phase(stage, 'Reclaiming unused blocks in the saved filesystem')
-            b.command('fstrim', '--verbose', saved)
+            with timed(stage, 'payload_trim'):
+                b.command('fstrim', '--verbose', saved)
             b.command('mount', '-o', 'remount,ro', saved)
             b.phase(stage, 'Refreshing the recovery environment')
-            runtime_copy(saved, root, stage)
-        with (stage / 'reports/root-fsck-after.txt').open('w') as log:
-            b.command('e2fsck', '-f', '-n', payload, stdout=log, stderr=subprocess.STDOUT)
+            with timed(stage, 'runtime_refresh'):
+                runtime_copy(saved, root, stage)
+        with timed(stage, 'payload_fsck_after'):
+            with (stage / 'reports/root-fsck-after.txt').open('w') as log:
+                b.command('e2fsck', '-f', '-n', payload, stdout=log, stderr=subprocess.STDOUT)
         b.phase(stage, 'Verifying the complete saved root filesystem')
-        checksum = hash_payload(payload)
+        with timed(stage, 'payload_sha256'):
+            checksum = hash_payload(payload)
         m['backup_sha256'] = checksum
         b.record(stage / 'reports/root-payload.json', {'encoding': 'raw', 'file': 'root.ext4',
                  'bytes': r.RAW_BYTES, 'sha256': checksum, 'raw_bytes': r.RAW_BYTES, 'raw_sha256': checksum})
@@ -254,10 +291,14 @@ def capture(image, stage, m, printer_context):
 
 
 def finish(image, stage, m):
-    module('build-recovery-config.py').configure(stage, m, image=image, rolling=True)
-    module('audit-recovery-layout.py').audit(stage, m, image=image)
-    module('validate-recovery-image.py').validate(stage, m, image=image)
-    module('smoke-recovery-launcher.py').smoke(stage, m, image=image)
+    with timed(stage, 'recovery_configuration_and_packaging'):
+        module('build-recovery-config.py').configure(stage, m, image=image, rolling=True)
+    with timed(stage, 'layout_audit'):
+        module('audit-recovery-layout.py').audit(stage, m, image=image)
+    with timed(stage, 'image_validation'):
+        module('validate-recovery-image.py').validate(stage, m, image=image)
+    with timed(stage, 'launcher_smoke'):
+        module('smoke-recovery-launcher.py').smoke(stage, m, image=image)
     b.require(not b.run('losetup', '-j', image), 'Recovery image still mounted')
     manifest = json.loads((stage / 'payload/manifest.json').read_text())
     return {'status': 'VERIFIED_ROLLING_RECOVERY_IMAGE', 'image': str(image),

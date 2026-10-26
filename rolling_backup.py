@@ -183,15 +183,20 @@ def run(rolling):
             print('BACKUP_WORK=' + str(stage), flush=True)
             print('Updating one rolling Debian recovery image. Do not copy it until completion.', flush=True)
             try:
-                if not record['initialized']:
-                    rolling.initialize(IMAGE, m)
-                    record['initialized'] = True
-                    save_state(record, owner)
-                else:
-                    rolling.check_filesystems(IMAGE, stage, repair=True)
-                rolling.capture(IMAGE, stage, m, printers.stopped_printers)
-                rolling.b.phase(stage, 'Building and checking the recovery boot environment')
-                result = rolling.finish(IMAGE, stage, m)
+                with rolling.timed(stage, 'backup_work_total'):
+                    if not record['initialized']:
+                        with rolling.timed(stage, 'image_initialization'):
+                            rolling.initialize(IMAGE, m)
+                        record['initialized'] = True
+                        save_state(record, owner)
+                    else:
+                        with rolling.timed(stage, 'outer_filesystem_checks'):
+                            rolling.check_filesystems(IMAGE, stage, repair=True)
+                    with rolling.timed(stage, 'capture_total'):
+                        rolling.capture(IMAGE, stage, m, printers.stopped_printers)
+                    rolling.b.phase(stage, 'Building and checking the recovery boot environment')
+                    with rolling.timed(stage, 'finish_total'):
+                        result = rolling.finish(IMAGE, stage, m)
             finally:
                 cleanup_stage(rolling, stage, owner)
             # In-place modification necessarily changes the previous target's

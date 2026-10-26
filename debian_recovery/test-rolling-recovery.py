@@ -11,6 +11,29 @@ import chromapad_recovery as r
 import rolling_recovery as rolling
 
 
+class PhaseTimingTests(unittest.TestCase):
+    def test_nested_phases_and_failure_are_retained(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            (stage / 'reports').mkdir()
+            with patch.object(rolling.time, 'monotonic', side_effect=[10, 11, 13, 17]):
+                with self.assertRaisesRegex(RuntimeError, 'original failure'):
+                    with rolling.timed(stage, 'outer'):
+                        with rolling.timed(stage, 'inner'):
+                            pass
+                        raise RuntimeError('original failure')
+            report = json.loads((stage / 'reports/phase-timings.json').read_text())
+            self.assertEqual([(p['name'], p['seconds'], p['status']) for p in report['phases']],
+                             [('inner', 2, 'OK'), ('outer', 7, 'FAILED')])
+            self.assertFalse((stage / 'reports/phase-timings.pending').exists())
+
+    def test_report_failure_does_not_mask_original_exception(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, 'backup error'):
+                with rolling.timed(Path(tmp), 'missing_reports_directory'):
+                    raise ValueError('backup error')
+
+
 class RawPayloadTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
