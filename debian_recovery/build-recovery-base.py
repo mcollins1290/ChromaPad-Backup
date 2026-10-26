@@ -29,6 +29,7 @@ with c.project() as (stage,m):
     b.phase(stage,'Create a fresh USB-layout image with unique filesystem identities')
     image=stage/'recovery-usb.img'
     prefix=bytearray((stage/'inputs/usb-prefix.bin').read_bytes())
+    struct.pack_into('<II',prefix,470,*c.USB_PARTS[1])
     struct.pack_into('<I',prefix,440,int(m['usb_disk_id'],16))
     with image.open('xb') as f:f.truncate(c.USB_BYTES);f.write(prefix)
     for i,(start,sectors) in enumerate(c.USB_PARTS):

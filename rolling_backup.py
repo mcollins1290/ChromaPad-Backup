@@ -23,7 +23,7 @@ STATE = DEST / 'coprint-debian.json'
 INFO = DEST / 'backup-info'
 DEPENDENCIES = ('rsync', 'mkimage', 'fdtget', 'readelf', 'losetup', 'mount', 'umount',
                 'unshare', 'cpio', 'gzip', 'fsck.vfat', 'e2fsck', 'mkfs.vfat',
-                'mkfs.ext4', 'fstrim', 'blkid', 'findmnt', 'chroot')
+                'mkfs.ext4', 'resize2fs', 'fstrim', 'blkid', 'findmnt', 'chroot')
 
 
 def require(ok, message):

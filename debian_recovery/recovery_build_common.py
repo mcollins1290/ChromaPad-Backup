@@ -6,8 +6,9 @@ import chromapad_debian_backup as b
 LOCAL=Path(__file__).resolve().parent
 BASE=Path('/media/raid1/coprint_2_debian')
 TOOLS=Path(os.environ.get('CHROMAPAD_BUILD_TOOLS','/var/tmp/chromapad-build-tools-6l5r2nhw/extracted'))
-USB_PARTS=[(2048,1048576),(1050624,25165824)]
-USB_BYTES=(1050624+25165824)*512
+LEGACY_USB_PARTS=[(2048,1048576),(1050624,25165824)]
+USB_PARTS=[(2048,1048576),(1050624,50331648)]
+USB_BYTES=sum(USB_PARTS[1])*512
 NATIVE=platform.machine() in ('aarch64','arm64')
 
 def install_signal_handlers():

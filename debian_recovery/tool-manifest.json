@@ -5,7 +5,7 @@
     "assets/usb-boot.cmd": "8342d8ea075ac1647fc7a952d5956d2b3aa6ae6229e89c126e63ed1e4107c118",
     "assets/usb-prefix.bin": "0ee92b10e674246a744bd075da28fe09a0347921e67246ab3dc813ae9dfd5fee",
     "audit-recovery-layout.py": "719735bf273036534c4934389be8a4d34a935ef80dbac09afafdb52a30202fb4",
-    "build-recovery-base.py": "fbe5bb6b2d81ef58ca5ba958b3a2a8ed6e4fc8b9b6a3b1ca31f61b113ac605cb",
+    "build-recovery-base.py": "5eb74fc76e4bc14a55f9fdeb31305ece2f7464b15e2eab792bdd093ef927576e",
     "build-recovery-config.py": "cdb0d40f82b9abc22b9966dbb3b3d1764b1e76980f3a5eb7231cf3f4f946c4af",
     "build_recovery_initramfs_arm.py": "9e36012e284826707ff97956f58018511ac5188fbc8bda6d25823b16939031dc",
     "chromapad-debian-recovery-backup": "646797a35773b8cb3c7f5813bd9a4bd5190ea1c2d5bb97513a0485d0b3883102",
@@ -22,7 +22,7 @@
     "probe-emmc-guard.sh": "c1be14db398dc4690f3592b4afec754d127579803d8fa789e7d2b84516302b16",
     "protected-reference.json": "1d84c1b7900bbcc36d9eeb91ccb7bada49889f7e57948fb0aa24daf7650c5757",
     "publish-recovery-image.py": "40f31557cc18bdce020094f88ce6109b635837c7dd17a96dcdb7e750f79e3ed4",
-    "recovery_build_common.py": "8a06eb21bc6ba55fb57caa2b0765e68328167dbed00339141121f8c54cb8fdc8",
+    "recovery_build_common.py": "268d09a968eae113ebb7572351d481352a7ace731e1d8074d324438e7b8de31b",
     "recovery_ram_launcher.py": "1724484b7b7ab7c3579c35d12a272e2a02e2004385b2debe58f6949591952866",
     "recovery_shutdown.py": "ad2509421d0c8a964b39a4f3e5eb8b2d37f30d1ade5a4484874e639618b05cb8",
     "recovery_ui.py": "780c250d6debaa180322603be578931c33b5911ee1e03d5f63fed45388e24609",
@@ -35,7 +35,7 @@
     "test-workflow-control.py": "b43f997c0df12950da46c3e68ead0789449d64a12323c242b1ed7fbcfb6e9f83",
     "test_debian_backup.py": "b3f5eb5fd3f127efbc90208191bd574c8b0ed6c8ab14a7b6e3b2ec53eb7b8f06",
     "validate-recovery-image.py": "979ad3e7e07361f0be053c9efa92f459fb371da278e1d57322e8d8544a0d3623",
-    "rolling_recovery.py": "5cafe777a47c2a32b73058c9ac88d597e76f887a34d546d52094c40554414903",
+    "rolling_recovery.py": "f255b19cd1ef033df68d3642444d50e54258148aa703ea422d578848a765085c",
     "test-rolling-recovery.py": "987de2478d33c5c09798967b278fe78ae4c7f442a684dce551c1a592d3c61d4d",
     "test-rolling-filesystems.py": "01058cd22a817cc28422cb6e42c919d40e65f3b9f0d00ed93e95d503dcb1bc55"
   }

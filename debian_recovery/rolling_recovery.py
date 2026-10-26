@@ -79,8 +79,9 @@ def initialize(image, m):
     prefix = bytearray((c.LOCAL / 'assets/usb-prefix.bin').read_bytes())
     b.require(len(prefix) == 1048576 and prefix[510:512] == b'\x55\xaa', 'Invalid USB boot prefix')
     struct.pack_into('<I', prefix, 440, int(m['usb_disk_id'], 16))
-    for i, geometry in enumerate(c.USB_PARTS):
+    for i, geometry in enumerate(c.LEGACY_USB_PARTS):
         b.require(struct.unpack_from('<II', prefix, 446 + i * 16 + 8) == tuple(geometry), 'USB prefix layout differs')
+    struct.pack_into('<II', prefix, 470, *c.USB_PARTS[1])
     with image.open('r+b', buffering=0) as f:
         f.write(prefix)
         os.fsync(f.fileno())

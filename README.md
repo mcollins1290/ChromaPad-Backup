@@ -54,9 +54,9 @@ The compact current
 record is `/media/raid1/coprint/coprint-debian.json`; successful state is `READY`.
 The latest bounded diagnostic reports are in `coprint/backup-info`.
 
-The image is about 12.50 GiB logically. NAS space checks reserve only its
+The image is about 24.50 GiB logically. NAS space checks reserve only its
 possible remaining allocation plus 512 MiB, rather than a fixed 45 GiB.
-The first image therefore needs about 13 GiB free on the NAS. Local disposable
+The first image therefore needs about 25 GiB free on the NAS. Local disposable
 boot/runtime work requires 1.5 GiB free on the pad. The image also needs room
 internally for the saved system, recovery environment, and recovery logs.
 Temporary work is cleaned after success or a handled failure; work with a
@@ -99,3 +99,12 @@ the journal may still be available. Reports are replaced by each run.
 These changes must be installed into both the controller and recovery builder
 before the normal launcher emits timings. Updating this checkout alone does
 not deploy them. The builder's tool manifest must accompany its changed files.
+
+The recovery data partition is now 24 GiB. USB media must have at least
+24.5 GiB actual capacity (normally sold as 32 GB or larger). Existing legacy
+12.5 GiB rolling images require the explicit `enlarge_recovery_image.py`
+migration after deploying the matching controller/builder. The migration
+checks ownership, old partition geometry and filesystem UUID, grows only
+the image file and its outer ext4 filesystem, and leaves the image FAILED
+until a complete backup succeeds. It retains migration diagnostics under
+`/var/tmp/chromapad-image-expansion-*`. It never writes a physical disk.
