@@ -1,0 +1,16 @@
+[Unit]
+Description=ChromaPad rolling Debian recovery backup
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/media/raid1/coprint
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -B /usr/local/lib/chromapad-backup-promoter/rolling_backup.py --run
+ExecStopPost=/usr/bin/python3 /usr/local/lib/chromapad-backup-promoter/printer_lifecycle.py
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=infinity
+TimeoutStopSec=240
+UMask=0077
