@@ -140,6 +140,37 @@ class RawPayloadTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             rolling.clear_child(self.root, '../outside')
 
+    def test_codex_logs_and_cache_excluded_but_history_and_state_preserved(self):
+        source, destination = self.root / 'source', self.root / 'destination'
+        source.mkdir()
+        destination.mkdir()
+        codex = source / 'root/.codex'
+        codex.mkdir(parents=True)
+        transient = ('logs_2.sqlite', 'logs_2.sqlite-shm', 'logs_2.sqlite-wal',
+                     'models_cache.json')
+        preserved = ('state_5.sqlite', 'state_5.sqlite-wal', 'thread_history_1.sqlite',
+                     'config.toml', 'sessions/session.jsonl', 'skills/example/SKILL.md')
+        for name in transient + preserved:
+            file = codex / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text('original')
+        rolling.copy_system(source, destination, self.root / 'copy.log')
+        for name in transient:
+            self.assertFalse((destination / 'root/.codex' / name).exists())
+            self.assertEqual((codex / name).read_text(), 'original')
+        for name in preserved:
+            self.assertEqual((destination / 'root/.codex' / name).read_text(), 'original')
+        # Background log/cache changes do not invalidate the consistency check.
+        for name in transient:
+            (codex / name).write_text('changed after copy')
+        difference = rolling.b.run(*rolling.b.RSYNC, '--dry-run', '--itemize-changes',
+                                   str(source) + '/', str(destination) + '/')
+        self.assertEqual(difference, '')
+        (codex / 'sessions/session.jsonl').write_text('new session data')
+        difference = rolling.b.run(*rolling.b.RSYNC, '--dry-run', '--itemize-changes',
+                                   str(source) + '/', str(destination) + '/')
+        self.assertIn('sessions/session.jsonl', difference)
+
     def test_incremental_copy_keeps_unchanged_files_and_updates_changes(self):
         source = self.root / 'source'
         destination = self.root / 'destination'

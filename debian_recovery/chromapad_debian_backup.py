@@ -37,7 +37,8 @@ USB_ARGS = ['usbcore.autosuspend=-1', 'usbcore.usbfs_memory_mb=256',
             'usbcore.old_scheme_first=1', 'usbcore.quirks=0781:5581:k',
             'usb-storage.delay_use=5', 'usb-storage.quirks=0781:5581:um']
 EXCLUDES = ['/dev/*', '/proc/*', '/sys/*', '/run/*', '/tmp/*', '/mnt/*',
-            '/media/*', '/boot/emmc/*', '/var/tmp/*', '/var/log/*', '/lost+found']
+            '/media/*', '/boot/emmc/*', '/var/tmp/*', '/var/log/*', '/lost+found',
+            '/root/.codex/logs_*.sqlite*', '/root/.codex/models_cache.json']
 RSYNC = ['rsync', '-aHAXx', '--numeric-ids', '--delete'] + ['--exclude='+x for x in EXCLUDES]
 VOLATILE_DIRS = {'dev/', 'proc/', 'sys/', 'run/', 'tmp/', 'mnt/', 'media/',
                  'boot/emmc/', 'var/tmp/', 'var/log/'}

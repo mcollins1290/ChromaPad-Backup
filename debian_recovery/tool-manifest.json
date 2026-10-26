@@ -11,7 +11,7 @@
     "chromapad-debian-recovery-backup": "646797a35773b8cb3c7f5813bd9a4bd5190ea1c2d5bb97513a0485d0b3883102",
     "chromapad-debian-recovery-backup.service": "16d9163c8e47ca6480ff97a5a412f73f98687b129ef51ad3571e942637c69cfd",
     "chromapad-recovery-complete.service": "1de4fcac4a2887dcd29e7fc3f8748698cdb5a196fb8e9506c865f2bfbd81fca6",
-    "chromapad_debian_backup.py": "d14c3fdb784750c87945eba7da1345ff0e13096c368e933b3d6f7048146eb1c0",
+    "chromapad_debian_backup.py": "a24044f1e6d5814ce65a242a14db1f173a2a14407ef7d3649876cff06ad2b617",
     "chromapad_recovery.py": "e211248eeccc4c6afec4344d3bdf329a84761a1dc5ebcad41cf75eee595b8f76",
     "chromapad_recovery_backup.py": "326534a237d441b88327bbe70250b610b5ed93117d746df05e1fe4d4ddbdaf75",
     "emmc-readiness-evidence.json": "75f0981db2558918895b9a314e23f9195a963f2b0501826073eed5d2efb61240",
@@ -36,7 +36,7 @@
     "test_debian_backup.py": "b3f5eb5fd3f127efbc90208191bd574c8b0ed6c8ab14a7b6e3b2ec53eb7b8f06",
     "validate-recovery-image.py": "979ad3e7e07361f0be053c9efa92f459fb371da278e1d57322e8d8544a0d3623",
     "rolling_recovery.py": "e15c12340f975bde444d95d501af1d082789c794ccb24d741b71fec279b709d9",
-    "test-rolling-recovery.py": "3e65ef01d7e2054079343d7d158921a55535f4d01b6848edd34dd3c86cbc93ae",
+    "test-rolling-recovery.py": "cb1a17ffe78d3f90084bf2f5fbe94ace1001900a291cf6f86977ff1b091f2a5a",
     "test-rolling-filesystems.py": "01058cd22a817cc28422cb6e42c919d40e65f3b9f0d00ed93e95d503dcb1bc55"
   }
 }

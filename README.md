@@ -116,3 +116,9 @@ still includes these paths, so restoration coverage is unchanged. Runtime
 copy reports now include rsync statistics and itemized changes. The first
 refresh after this change includes cleanup work; later runs are the useful
 comparison for steady-state timings. Payload hashing remains unchanged.
+
+Codex diagnostic databases (`/root/.codex/logs_*.sqlite*`, including SQLite
+sidecars) and `/root/.codex/models_cache.json` are excluded as transient logs
+and cache. Codex state databases, session history, configuration, skills and
+plugins remain included. Close Codex for a consistent copy of that state;
+background diagnostic/cache updates alone no longer fail the final comparison.
