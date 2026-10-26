@@ -10,7 +10,7 @@ import printer_lifecycle as p
 
 IDLE = {'print_stats': {'state': 'standby'}, 'pause_resume': {'is_paused': False},
         'idle_timeout': {'state': 'Idle'}, 'toolhead': {'print_time': 5, 'estimated_print_time': 10},
-        'configfile': {'settings': {'delayed_gcode preheat_pla': {'initial_duration': 0}}}}
+        'configfile': {'settings': {'delayed_gcode preheat_pla': {'initial_duration': 3, 'gcode': '{% set preheat_pla = false %}'}}}}
 
 
 class LifecycleTests(unittest.TestCase):
@@ -107,6 +107,28 @@ class IdleGuards(unittest.TestCase):
     def test_idle_and_cold_allowed(self):
         p.validate_idle(IDLE, {'extruder': {'target': 0, 'power': 0}})
 
+    def test_preheat_variable_controls_guard_regardless_of_duration(self):
+        for value in ('false', 'False', "'false'", '"False"', 'true', "'true'", 'unknown', ''):
+            for duration in (0, 3):
+                state = copy.deepcopy(IDLE)
+                macro = state['configfile']['settings']['delayed_gcode preheat_pla']
+                macro.update(initial_duration=duration, gcode='{% set preheat_pla = ' + value + ' %}')
+                with self.subTest(value=value, duration=duration):
+                    if 'false' in value.lower():
+                        p.validate_idle(state, {})
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'preheat_pla'):
+                            p.validate_idle(state, {})
+
+    def test_missing_macro_allowed_but_ambiguous_variable_refused(self):
+        state = copy.deepcopy(IDLE)
+        state['configfile']['settings'] = {}
+        p.validate_idle(state, {})
+        for code in ('G4 P1', '{% set preheat_pla = false %}\n{% set preheat_pla = true %}'):
+            state['configfile']['settings'] = {'delayed_gcode preheat_pla': {'gcode': code}}
+            with self.assertRaisesRegex(RuntimeError, 'Cannot determine preheat_pla'):
+                p.validate_idle(state, {})
+
     def test_busy_paused_heating_motion_and_preheat_refused(self):
         cases = [('print_stats','state','printing'),('print_stats','state','paused'),
                  ('pause_resume','is_paused',True),('idle_timeout','state','Printing'),
@@ -118,7 +140,7 @@ class IdleGuards(unittest.TestCase):
         for heater in ({'target':30,'power':0}, {'target':0,'power':0.2}):
             with self.assertRaisesRegex(RuntimeError, 'heater'): p.validate_idle(IDLE, {'bed':heater})
         state = copy.deepcopy(IDLE)
-        state['configfile']['settings']['delayed_gcode preheat_pla']['initial_duration'] = 1
+        state['configfile']['settings']['delayed_gcode preheat_pla']['gcode'] = '{% set preheat_pla = true %}'
         with self.assertRaisesRegex(RuntimeError, 'preheat'): p.validate_idle(state, {})
 
 

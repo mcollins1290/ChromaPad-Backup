@@ -3,6 +3,7 @@ import configparser
 import contextlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -71,8 +72,16 @@ def validate_idle(status, heaters):
         require(heater['target'] == 0 and heater['power'] == 0,
                 'Turn off heater before backup: ' + name)
     preheat = status['configfile']['settings'].get('delayed_gcode preheat_pla', {})
-    require(float(preheat.get('initial_duration', 0)) == 0,
-            'Automatic startup preheat must be disabled before automatic Klipper restart')
+    if preheat:
+        assignments = re.findall(r"\{%[-+]?\s*set\s+preheat_pla\s*=\s*(.*?)\s*[-+]?%\}",
+                                 preheat.get('gcode', ''), flags=re.DOTALL)
+        require(len(assignments) == 1,
+                'Cannot determine preheat_pla variable before automatic Klipper restart')
+        value = assignments[0].strip()
+        require(value.lower() in ('true', 'false', "'true'", "'false'", '"true"', '"false"'),
+                'Cannot determine preheat_pla variable before automatic Klipper restart')
+        require(value.strip("\"'").lower() == 'false',
+                'preheat_pla must be false before automatic Klipper restart')
 
 
 def readiness(unit):
