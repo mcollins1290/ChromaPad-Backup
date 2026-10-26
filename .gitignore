@@ -1,3 +1,28 @@
 Log/
 __pycache__/
 *.py[cod]
+
+# Local migration records and workstation helpers are not public source.
+/archive/
+/CURRENT-HANDOFF.txt
+/START-HERE.txt
+/invoke-pad-task.ps1
+/requirements.csv
+/requirements-simple.csv
+stock-image-inspection-*/
+probe-artifacts-*/
+installer-artifacts-*/
+project-build-sources.json
+
+# Private inputs retained from the configured pad. Keep their pinned hashes.
+emmc-readiness-evidence.json
+/debian_recovery/protected-reference.json
+/debian_recovery/assets/usb-prefix.bin
+
+# Generated recovery images and local build state.
+*.img
+*.ext4
+*.ext4.gz
+/debian_recovery/recovery-usb-stage.json
+/debian_recovery/recovery-release.json
+/debian_recovery/recovery-emmc-guard.sh

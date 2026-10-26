@@ -1,0 +1,18 @@
+[Unit]
+Description=Touchscreen shutdown after verified ChromaPad recovery
+Requires=chromapad-recovery.service
+After=chromapad-recovery.service
+ConditionPathExists=/etc/chromapad-usb
+ConditionPathExistsGlob=/var/lib/chromapad-recovery/*/completed.json
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/chromapad-recovery/recovery_shutdown.py
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

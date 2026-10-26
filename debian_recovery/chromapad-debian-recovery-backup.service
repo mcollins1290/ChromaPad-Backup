@@ -1,0 +1,16 @@
+[Unit]
+Description=Back up Debian and build a verified automatic recovery USB image
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/media/raid1/coprint_2_debian
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 /usr/local/lib/chromapad-recovery-builder/chromapad_recovery_backup.py --capture
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=infinity
+TimeoutStopSec=180
+UMask=0077
+

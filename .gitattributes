@@ -1,0 +1,6 @@
+*.sh text eol=lf
+*.py text eol=lf
+*.service text eol=lf
+*.cmd text eol=lf
+/debian_recovery/chromapad-debian-recovery-backup text eol=lf
+/debian_recovery/tool-manifest.json text eol=lf

@@ -1,7 +1,9 @@
 # ChromaPad rolling Debian backup
 
 These files are the pad-side launcher and backup controller for the configured
-Debian ChromaPad. They use the separately installed recovery builder at
+Debian ChromaPad. Recovery-builder and touchscreen sources are maintained in
+[`debian_recovery/`](debian_recovery/README.md). The running controller uses
+the separately installed recovery builder at
 `/usr/local/lib/chromapad-recovery-builder` and the installed controller/service.
 Cloning this repository alone does not install those components. The NAS paths
 and device checks are specific to this configured pad.
@@ -72,3 +74,9 @@ payloads and the new raw sparse payload. No backup schedule is installed.
 
 The older generation builder remains available for history/rollback, but the
 rolling command does not use `coprint_2_debian` or retain its old build products.
+
+For source development, run `python3 tests/run_unit_tests.py` on Linux with
+Python 3, Pillow, rsync and DejaVu Sans installed. This runs the 102 unit tests
+using temporary files and mocked device/service operations. It does not start
+a backup, restore the pad or power it off. Private-input integration tests are
+described in the [builder notes](debian_recovery/README.md).
