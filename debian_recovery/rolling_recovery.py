@@ -185,8 +185,15 @@ def runtime_copy(source, root, stage):
              '--include=/home/cp/.bash_logout', '--exclude=/home/cp/*',
              '--exclude=/root/*', '--exclude=/opt/chromapad-recovery/***',
              '--exclude=/var/lib/chromapad-recovery/***']
+    # Sender-only hides let --delete remove these from older recovery runtimes.
+    # Ordinary excludes would protect the stale copies on the receiver instead.
+    # The saved root payload retains all of these files for physical restoration.
+    rules += ['--filter=H ' + path for path in
+              ('/usr/src/***', '/usr/share/doc/***', '/usr/share/man/***',
+               '/var/cache/*')]
     with (stage / 'reports/runtime-copy.txt').open('w') as log:
-        b.command('rsync', '-aHAXx', '--numeric-ids', '--delete', *rules,
+        b.command('rsync', '-aHAXx', '--numeric-ids', '--delete', '--stats',
+                  '--itemize-changes', *rules,
                   str(source) + '/', str(root) + '/', stdout=log, stderr=subprocess.STDOUT)
     # This directory is generated recovery state, not the captured user's data.
     state = root / 'var/lib/chromapad-recovery'

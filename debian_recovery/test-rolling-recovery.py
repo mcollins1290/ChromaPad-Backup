@@ -34,6 +34,50 @@ class PhaseTimingTests(unittest.TestCase):
                     raise ValueError('backup error')
 
 
+class RuntimeRefreshTests(unittest.TestCase):
+    def test_refresh_prunes_only_runtime_extras_and_preserves_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            (stage / 'reports').mkdir()
+            source, root = stage / 'saved', stage / 'runtime'
+            source.mkdir()
+            root.mkdir()
+            def write(base, name, value):
+                path = base / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(value)
+            omitted = ('usr/src/kernel/Makefile', 'usr/share/doc/package/copyright',
+                       'usr/share/man/man1/tool.1', 'var/cache/apt/pkgcache.bin')
+            for name in omitted:
+                write(source, name, 'saved original')
+                write(root, name, 'old duplicate')
+            kept = ('usr/bin/python3', 'usr/lib/modules/kernel/module.ko',
+                    'etc/printer.cfg', 'home/cp/.ssh/authorized_keys')
+            for name in kept:
+                write(source, name, 'needed runtime input')
+            write(source, 'home/cp/private-data', 'saved user data')
+            write(source, 'root/private-data', 'saved root data')
+            write(root, 'opt/chromapad-recovery/root.ext4', 'preserve payload')
+            write(root, 'var/lib/chromapad-recovery/attempt.json', 'old attempt')
+            write(root, 'obsolete', 'remove stale runtime file')
+            rolling.runtime_copy(source, root, stage)
+            for name in omitted:
+                self.assertEqual((source / name).read_text(), 'saved original')
+                self.assertFalse((root / name).exists())
+            for name in kept:
+                self.assertEqual((root / name).read_text(), 'needed runtime input')
+            self.assertEqual((root / 'opt/chromapad-recovery/root.ext4').read_text(), 'preserve payload')
+            self.assertFalse((root / 'home/cp/private-data').exists())
+            self.assertFalse((root / 'root/private-data').exists())
+            self.assertFalse((root / 'obsolete').exists())
+            self.assertEqual(list((root / 'var/lib/chromapad-recovery').iterdir()), [])
+            self.assertIn('Number of files:', (stage / 'reports/runtime-copy.txt').read_text())
+            # Unchanged executable is reused on the next refresh.
+            inode = (root / 'usr/bin/python3').stat().st_ino
+            rolling.runtime_copy(source, root, stage)
+            self.assertEqual((root / 'usr/bin/python3').stat().st_ino, inode)
+
+
 class RawPayloadTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

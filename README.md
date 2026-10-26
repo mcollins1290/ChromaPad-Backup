@@ -108,3 +108,11 @@ checks ownership, old partition geometry and filesystem UUID, grows only
 the image file and its outer ext4 filesystem, and leaves the image FAILED
 until a complete backup succeeds. It retains migration diagnostics under
 `/var/tmp/chromapad-image-expansion-*`. It never writes a physical disk.
+
+Recovery refresh omits `/usr/src`, `/usr/share/doc`, `/usr/share/man` and
+contents of `/var/cache` from the recovery environment. Existing duplicates
+there are removed on the next successful refresh. The saved Debian payload
+still includes these paths, so restoration coverage is unchanged. Runtime
+copy reports now include rsync statistics and itemized changes. The first
+refresh after this change includes cleanup work; later runs are the useful
+comparison for steady-state timings. Payload hashing remains unchanged.
