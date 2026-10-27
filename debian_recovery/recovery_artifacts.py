@@ -21,6 +21,23 @@ def digest(path):
     return value.hexdigest()
 
 
+def regular_file_record(path):
+    """Read a regular input once for both its fingerprint and ELF detection."""
+    path = Path(path)
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise RuntimeError('Not a regular artifact input file: ' + str(path))
+    value = hashlib.sha256()
+    with path.open('rb') as stream:
+        block = stream.read(4 * 1024 ** 2)
+        prefix = block[:4]
+        while block:
+            value.update(block)
+            block = stream.read(4 * 1024 ** 2)
+    return ({'mode': info.st_mode, 'uid': info.st_uid, 'gid': info.st_gid,
+             'bytes': info.st_size, 'sha256': value.hexdigest()}, prefix)
+
+
 def file_record(path):
     path = Path(path)
     info = path.lstat()
@@ -34,8 +51,12 @@ def file_record(path):
     return record
 
 
-def root_records(root, names):
-    """Fingerprint selected files, resolving absolute links inside the chroot."""
+def root_records(root, names, known_files=None):
+    """Fingerprint selected files, resolving absolute links inside the chroot.
+
+    known_files may contain regular-file records read earlier in this same
+    operation from an immutable offline root. Links are still resolved afresh.
+    """
     root = Path(root).resolve()
     names = sorted(set(str(name).lstrip('/') for name in names))
     records = {}
@@ -60,7 +81,8 @@ def root_records(root, names):
                 pending.extendleft(reversed(Path(target.lstrip('/')).parts))
         key = str(current.relative_to(root))
         if key not in records:
-            records[key] = file_record(current)
+            known = (known_files or {}).get(str(current))
+            records[key] = known if known is not None else file_record(current)
     return {'selected': names, 'files': records}
 
 
@@ -110,6 +132,7 @@ class ArtifactCache:
         if kind not in KINDS:
             raise ValueError('Unknown artifact kind')
         started = time.monotonic() if started is None else started
+        input_check_seconds = round(time.monotonic() - started, 3)
         key = hashlib.sha256(json.dumps({'implementation': digest(__file__), 'inputs': inputs}, sort_keys=True).encode()).hexdigest()
         hit, reason, metadata = False, 'disabled', None
         slot = CACHE / kind
@@ -139,6 +162,7 @@ class ArtifactCache:
                 (self.stage / 'artifact-cache-pending.json').write_text(json.dumps(self.pending))
         self.events.append({'artifact': kind, 'status': 'HIT' if hit else 'BUILT',
                             'reason': None if hit else reason,
+                            'input_check_seconds': input_check_seconds,
                             'seconds': round(time.monotonic() - started, 3)})
         (self.stage / 'reports/artifact-cache.json').write_text(json.dumps({'artifacts': self.events}, indent=2) + '\n')
         print('ARTIFACT_CACHE ' + kind + ' ' + self.events[-1]['status'], flush=True)

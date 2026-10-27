@@ -2,11 +2,31 @@
 import os,re,shutil,stat,subprocess,tarfile,time,sys
 from pathlib import Path
 
+
+def elf_metadata(binaries):
+    """Batch readelf without mixing one executable's dependencies with another's."""
+    for offset in range(0,len(binaries),64):
+        batch=binaries[offset:offset+64]
+        output=subprocess.check_output(['readelf','-l','-d',*batch],text=True,
+                                       env={**os.environ,'LC_ALL':'C'})
+        if len(batch)==1:
+            yield batch[0],output
+            continue
+        sections=re.split(r'(?m)^File: (.*)\n',output)
+        names=sections[1::2];data=sections[2::2]
+        if len(names)!=len(batch) or len(set(names))!=len(names) or set(names)!=set(map(str,batch)):
+            raise RuntimeError('Unexpected readelf file sections')
+        outputs=dict(zip(names,data))
+        for binary in batch:yield binary,outputs[str(binary)]
+
+
 def package(root,out,engine,cache=None):
-    root=Path(root);out=Path(out);tree=out/'ram-tools'
+    root=Path(root).resolve();out=Path(out);tree=out/'ram-tools'
     if tree.exists():raise RuntimeError('RAM runtime tree already exists')
     started=time.monotonic()
-    copied=set();elfs=[];entries={}
+    copied=set();elfs=[];entries={};fingerprints={}
+    if cache is not None:
+        from recovery_artifacts import regular_file_record
     def add(relative):
         relative=Path(str(relative).lstrip('/'))
         if '..' in relative.parts:raise RuntimeError('Unsafe runtime path')
@@ -23,8 +43,12 @@ def package(root,out,engine,cache=None):
             entries[str(relative)]={'source':src,'link':link};add(target);return
         if not src.is_file():raise RuntimeError('Runtime dependency missing: '+str(src))
         entries[str(relative)]={'source':src}
-        with src.open('rb') as f:
-            if f.read(4)==b'\x7fELF':elfs.append(src)
+        if cache is not None:
+            record,prefix=regular_file_record(src)
+            fingerprints[str(src)]=record
+        else:
+            with src.open('rb') as f:prefix=f.read(4)
+        if prefix==b'\x7fELF':elfs.append(src)
     # Shared-library names in /lib are canonicalized to /usr/lib to avoid duplicate copies.
     def canonical(name):return 'usr/'+name if name.startswith(('lib/','bin/','sbin/')) else name
     for name in ('python3','mount','umount','findmnt','udevadm','systemctl','sync','true','env'):
@@ -41,15 +65,15 @@ def package(root,out,engine,cache=None):
         if p.is_file() or p.is_symlink():add(str(p.relative_to(root)))
     index=0
     while index<len(elfs):
-        binary=elfs[index];index+=1
-        data=subprocess.check_output(['readelf','-l','-d',binary],text=True)
-        interp=re.search(r'Requesting program interpreter: ([^\]]+)',data)
-        if interp:add(canonical(interp[1].lstrip('/')))
-        for name in re.findall(r'Shared library: \[([^\]]+)\]',data):
-            candidates=[root/'usr/lib/aarch64-linux-gnu'/name,root/'usr/lib'/name,root/'usr/lib/systemd'/name,root/'usr/lib/aarch64-linux-gnu/systemd'/name]
-            found=next((p for p in candidates if p.exists()),None)
-            if found is None:raise RuntimeError('Missing '+name+' for '+str(binary))
-            add(str(found.relative_to(root)))
+        batch=elfs[index:];index=len(elfs)
+        for binary,data in elf_metadata(batch):
+            interp=re.search(r'Requesting program interpreter: ([^\]]+)',data)
+            if interp:add(canonical(interp[1].lstrip('/')))
+            for name in re.findall(r'Shared library: \[([^\]]+)\]',data):
+                candidates=[root/'usr/lib/aarch64-linux-gnu'/name,root/'usr/lib'/name,root/'usr/lib/systemd'/name,root/'usr/lib/aarch64-linux-gnu/systemd'/name]
+                found=next((p for p in candidates if p.exists()),None)
+                if found is None:raise RuntimeError('Missing '+name+' for '+str(binary))
+                add(str(found.relative_to(root)))
     for name in ('passwd','group','nsswitch.conf','hosts'):add('etc/'+name)
     def build():
         tree.mkdir()
@@ -75,6 +99,6 @@ def package(root,out,engine,cache=None):
     from recovery_artifacts import root_records,file_record
     inputs={'schema':1,'python':sys.version,'builder':file_record(__file__),
             'engine':file_record(engine),'display':file_record(Path(engine).with_name('recovery_ui.py')),
-            'files':root_records(root,entries),
+            'files':root_records(root,entries,known_files=fingerprints),
             'links':{name:entry['link'] for name,entry in entries.items() if 'link' in entry}}
     return cache.get('runtime',inputs,out/'ram-tools.tar.gz',build,started=started)

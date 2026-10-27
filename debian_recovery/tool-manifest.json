@@ -16,7 +16,7 @@
     "chromapad_recovery_backup.py": "326534a237d441b88327bbe70250b610b5ed93117d746df05e1fe4d4ddbdaf75",
     "emmc-readiness-evidence.json": "75f0981db2558918895b9a314e23f9195a963f2b0501826073eed5d2efb61240",
     "make_recovery_arm.py": "7c3da792551c5ad12ecf0f27483646a91f22e0bf3bc394aa247e59a7294ac37c",
-    "package_recovery_runtime.py": "81029edea4805b6caf42306ee269e40b0f16b65d4cd6f2951bff53f6c97fc7f5",
+    "package_recovery_runtime.py": "edb619395b9c0f8afd8185ce91b21618da661fe9134d61444574af5e83aa4313",
     "prepare-recovery-guard.py": "6b58ae2ef8ac1a5efd6db9d7078c10804567ffd31d183964642a8d115238c8d3",
     "prepare-recovery-inputs.py": "ae62f062ac40f9f044e8a719ce857cc7727e28c51ef2e1ec78a6769fdf1f1637",
     "probe-emmc-guard.sh": "c1be14db398dc4690f3592b4afec754d127579803d8fa789e7d2b84516302b16",
@@ -40,8 +40,8 @@
     "test-rolling-filesystems.py": "01058cd22a817cc28422cb6e42c919d40e65f3b9f0d00ed93e95d503dcb1bc55",
     "nas_payload_hash.py": "821042f43de953459c9562ac50c25d12559ac137a8cf69e8ce68f7623422b01a",
     "test-nas-payload-hash.py": "ec80ddb8f5f15706a1b3d6c7cab31335b92c21877bb99d510e7772f78f7009a5",
-    "recovery_artifacts.py": "9a7449af3e03e8d641335604448e8b3c4ba59af41bca97e4d613b071baf10c4b",
+    "recovery_artifacts.py": "de1ccf6370bbd667fade322c30e9149d2b076c20c58c4eeb2e2d00924db269a3",
     "recovery_initramfs.py": "275de8fec32d3188e97177fd0bfffa6cbdcf4fa6e6aa0ee2cc6eb3e754c533f5",
-    "test-recovery-artifacts.py": "f741959194af40468dc277b5bccfa3950ab099da728fb042d3ac8b974f76cfe6"
+    "test-recovery-artifacts.py": "2b4148dfd759655ed08c83353733f5a8d45d82bfa8d8a11da73c518f4c2ccc5a"
   }
 }

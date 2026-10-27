@@ -199,9 +199,22 @@ arguments, manifests and restore authorization are still generated each run;
 final image validation, toolchain/display checks, launcher smoke, the full
 payload checksum and restore readback remain enabled.
 
+RAM input planning hashes each regular file while checking its ELF signature,
+then reuses that fingerprint within the same offline-root operation. Symlinks
+are still resolved and recorded. `readelf` checks run in batches of at most 64
+files, with each output section checked against its requested filename; newly
+discovered dependencies are checked in subsequent batches. The report's
+`input_check_seconds` separates input planning from artifact retrieval/building.
+Builder changes invalidate the cache, so the first backup after an update may
+rebuild artifacts before subsequent backups can reuse them.
+
 A read-only experiment verified fresh artifacts against the last successful
 image by comparing their contents, permissions, ownership and symlinks. A
 second lookup in an isolated cache reused byte-identical artifacts: combined
 artifact work fell from 60.7s to 15.1s. This is a component benchmark with warm
-filesystem caches, not a measured full-backup saving. Normal backups still
-need measurement after the production cache has been populated.
+filesystem caches, not a measured full-backup saving. A subsequent production
+cache hit took 36.4s for the RAM archive: a read-only profile showed input
+planning dominated and archive retrieval/verification took only 0.7s. Combining
+reads and batching dependency checks reduced a warm-cache prototype from
+4.8s to 3.0s with identical fingerprints. Normal backup timings are needed to
+measure the saving with colder filesystem caches.

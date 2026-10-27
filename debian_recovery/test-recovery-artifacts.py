@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import recovery_artifacts as a
-from package_recovery_runtime import package
+from package_recovery_runtime import package, elf_metadata
 
 
 class ArtifactTests(unittest.TestCase):
@@ -74,6 +74,47 @@ class ArtifactTests(unittest.TestCase):
         (root / 'bad').symlink_to('../../outside')
         with self.assertRaises(RuntimeError):
             a.root_records(root, ['bad'])
+
+    def test_combined_read_preserves_fingerprint_and_chroot_link_resolution(self):
+        root = self.root / 'offline'
+        root.mkdir()
+        file = root / 'binary'
+        file.write_bytes(b'\x7fELF' + b'x' * (4 * 1024 ** 2))
+        file.chmod(0o751)
+        (root / 'alias').symlink_to('/binary')
+        record, prefix = a.regular_file_record(file)
+        self.assertEqual(prefix, b'\x7fELF')
+        self.assertEqual(record, a.file_record(file))
+        expected = a.root_records(root, ['binary', 'alias'])
+        original = a.file_record
+        def link_only(path):
+            self.assertTrue(Path(path).is_symlink(), 'Regular file was read twice')
+            return original(path)
+        with patch.object(a, 'file_record', side_effect=link_only):
+            self.assertEqual(expected, a.root_records(root, ['binary', 'alias'],
+                                                     known_files={str(file): record}))
+        with self.assertRaises(RuntimeError):
+            a.regular_file_record(root / 'alias')
+
+    def test_batched_elf_sections_are_matched_to_their_files(self):
+        binaries = [Path('/offline/bin/'+str(i)) for i in range(65)]
+        def readelf(args, **kwargs):
+            batch = args[3:]
+            if len(batch) == 1:
+                return 'single executable'
+            return ''.join('\nFile: '+str(path)+'\ndeps '+path.name+'\n'
+                           for path in reversed(batch))
+        with patch('package_recovery_runtime.subprocess.check_output', side_effect=readelf) as run:
+            result = list(elf_metadata(binaries))
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual([path for path, data in result], binaries)
+        self.assertEqual(result[0][1], 'deps 0\n')
+        self.assertEqual(result[-1][1], 'single executable')
+        for output in ('File: /offline/bin/0\nmissing second',
+                       'File: /offline/bin/0\none\nFile: /offline/bin/0\nduplicate\n'):
+            with patch('package_recovery_runtime.subprocess.check_output', return_value=output):
+                with self.assertRaises(RuntimeError):
+                    list(elf_metadata(binaries[:2]))
 
     def test_runtime_plan_detects_new_files_and_changed_library_precedence(self):
         root = self.root / 'runtime'
