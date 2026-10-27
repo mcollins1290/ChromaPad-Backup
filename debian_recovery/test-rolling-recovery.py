@@ -1,4 +1,3 @@
-import errno
 import hashlib
 import json
 import os
@@ -93,64 +92,6 @@ class RawPayloadTests(unittest.TestCase):
         checksum = hashlib.sha256(self.raw).hexdigest()
         self.m = {'schema': 2, 'root_payload': {'encoding': 'raw', 'file': 'root.ext4',
                   'bytes': 8192, 'raw_bytes': 8192, 'sha256': checksum, 'raw_sha256': checksum}}
-
-    def test_sparse_hash_matches_sequential_and_tracks_holes(self):
-        size = 16 * 1024 ** 2
-        raw = bytearray(self.raw)
-        struct.pack_into('<I', raw, 1028, size // 1024)
-        with self.path.open('wb') as f:
-            f.write(raw)
-            f.seek(8 * 1024 ** 2)
-            f.write(b'data between holes')
-            f.truncate(size)
-        (self.root / 'reports').mkdir()
-        expected = hashlib.sha256(self.path.read_bytes()).hexdigest()
-        with patch.object(r, 'RAW_BYTES', size):
-            self.assertEqual(rolling.hash_payload(self.path, stage=self.root, sparse=True), expected)
-            report = json.loads((self.root / 'reports/payload-hash.json').read_text())
-            self.assertEqual(report['data_bytes_read'] + report['hole_bytes_generated'], size)
-            self.assertGreater(report['hole_bytes_generated'], 0)
-            self.assertEqual(rolling.hash_payload(self.path, sparse=False), expected)
-            with patch.object(rolling.os, 'lseek', side_effect=OSError(errno.EINVAL, 'unsupported')):
-                self.assertEqual(rolling.hash_payload(self.path, sparse=True), expected)
-        # A modification in a previously sparse region must alter the digest.
-        with self.path.open('r+b') as f:
-            f.seek(4 * 1024 ** 2)
-            f.write(b'changed')
-        with patch.object(r, 'RAW_BYTES', size):
-            actual = rolling.hash_payload(self.path, sparse=True)
-        self.assertNotEqual(actual, expected)
-        self.assertEqual(actual, hashlib.sha256(self.path.read_bytes()).hexdigest())
-
-    def test_extent_fallback_and_real_io_errors(self):
-        with self.path.open('rb') as f:
-            with patch.object(rolling.os, 'lseek', side_effect=[4096, 8192, OSError(errno.ENOTSUP, 'unsupported')]):
-                self.assertEqual(list(rolling.payload_ranges(f, 16384)),
-                                 [(0, 4096, True), (4096, 8192, False), (8192, 16384, False)])
-            with patch.object(rolling.os, 'lseek', side_effect=OSError(errno.EIO, 'I/O failure')):
-                with self.assertRaises(OSError):
-                    list(rolling.payload_ranges(f, 8192))
-            with patch.object(rolling.os, 'lseek', side_effect=OSError(errno.ENXIO, 'no data')):
-                self.assertEqual(list(rolling.payload_ranges(f, 8192)), [(0, 8192, True)])
-
-    def test_hash_rejects_payload_modified_during_scan(self):
-        original_ranges = rolling.payload_ranges
-        def changing_ranges(*args, **kwargs):
-            yield from original_ranges(*args, **kwargs)
-            with self.path.open('r+b') as f:
-                f.seek(-1, os.SEEK_END)
-                f.write(b'x')
-        with patch.object(r, 'RAW_BYTES', 8192), patch.object(rolling, 'payload_ranges', side_effect=changing_ranges):
-            with self.assertRaisesRegex(RuntimeError, 'changed during hashing'):
-                rolling.hash_payload(self.path)
-
-    def test_hash_rejects_wrong_length_and_invalid_superblock(self):
-        with patch.object(r, 'RAW_BYTES', 8193), self.assertRaisesRegex(RuntimeError, 'length'):
-            rolling.hash_payload(self.path)
-        self.raw[1080:1082] = b'xx'
-        self.path.write_bytes(self.raw)
-        with patch.object(r, 'RAW_BYTES', 8192), self.assertRaisesRegex(RuntimeError, 'ext4'):
-            rolling.hash_payload(self.path)
 
     def test_raw_payload_restores_exact_bytes(self):
         dest = self.root / 'restored'

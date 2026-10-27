@@ -122,24 +122,3 @@ sidecars) and `/root/.codex/models_cache.json` are excluded as transient logs
 and cache. Codex state databases, session history, configuration, skills and
 plugins remain included. Close Codex for a consistent copy of that state;
 background diagnostic/cache updates alone no longer fail the final comparison.
-
-## Sparse checksum experiment
-
-`sudo python3 -B benchmark_payload_hash.py` compares sequential and sparse-aware
-hashing of a READY image, mounted read-only. It takes roughly two checksum
-passes and does not stop printers or run a backup. Both digests must match
-the verified image. Results are saved to
-`/var/tmp/chromapad-payload-hash-benchmark.json`.
-
-The October 27 experiment measured 537.4 seconds sequential versus 524.6
-seconds sparse-aware (2.4% faster), with identical SHA-256 values. CPU time
-fell from 42.4 to 32.6 seconds. Sparse-aware hashing generated 5.58 GB of hole
-bytes locally, but Linux already handles holes efficiently during normal
-reads; the remaining time is dominated by reading stored data. This small
-single-pair difference does not establish a reliable speedup, particularly
-because outer/NAS caches can remain warm between passes. Recorded evidence is
-in `benchmarks/sparse-hash-2026-10-27.json`.
-
-Sparse hashing remains opt-in (`hash_payload(..., sparse=True)`) and is not
-selected by normal backups. No installed builder was changed for this
-experiment. The restore format and full SHA-256 verification remain intact.

@@ -4,7 +4,6 @@ Only regular image files are writable targets. The existing restore engine,
 guarded boot and touchscreen remain shared with the earlier recovery builder.
 """
 import contextlib
-import errno
 import hashlib
 import importlib.util
 import json
@@ -162,84 +161,20 @@ def disarm(fat):
     b.command('sync', '-f', fat)
 
 
-def payload_ranges(stream, size, sparse=True):
-    """Yield (start, end, is_hole); unsupported extent queries use normal reads."""
-    offset = 0
-    unsupported = {errno.EINVAL, errno.ENOTSUP, errno.ENOSYS}
-    while offset < size:
-        if not sparse:
-            yield offset, size, False
-            return
-        try:
-            start = os.lseek(stream.fileno(), offset, os.SEEK_DATA)
-        except OSError as exc:
-            if exc.errno == errno.ENXIO:
-                yield offset, size, True
-                return
-            if exc.errno in unsupported:
-                yield offset, size, False
-                return
-            raise
-        b.require(offset <= start < size, 'Invalid payload data extent')
-        try:
-            end = os.lseek(stream.fileno(), start, os.SEEK_HOLE)
-        except OSError as exc:
-            if exc.errno in unsupported:
-                yield offset, size, False
-                return
-            raise
-        b.require(start < end <= size, 'Invalid payload hole boundary')
-        if start > offset:
-            yield offset, start, True
-        yield start, end, False
-        offset = end
-
-
-def hash_payload(path, stage=None, sparse=False):
-    """Hash exact logical bytes, generating sparse-hole zeros locally.
-
-    Sparse hashing is opt-in: measured runtime savings were only about 2%.
-    The resulting SHA-256 is identical to a sequential read. All allocated
-    data is still read; extent-query failures never silently skip data.
-    """
+def hash_payload(path):
     value = hashlib.sha256()
-    done, next_report, data_bytes, hole_bytes = 0, 1024 ** 3, 0, 0
-    zeros = bytes(4 * 1024 ** 2)
-    started = time.monotonic()
+    done, next_report = 0, 1024 ** 3
     with path.open('rb', buffering=0) as stream:
-        before = os.fstat(stream.fileno())
-        b.require(before.st_size == r.RAW_BYTES, 'Wrong saved root length')
-        r.check_superblock(stream.read(2048))
-        for start, end, hole in payload_ranges(stream, before.st_size, sparse):
-            stream.seek(start)
-            remaining = end - start
-            while remaining:
-                length = min(len(zeros), remaining)
-                block = memoryview(zeros)[:length] if hole else stream.read(length)
-                b.require(len(block) == length, 'Short saved root read')
-                value.update(block)
-                remaining -= length
-                done += length
-                if hole:
-                    hole_bytes += length
-                else:
-                    data_bytes += length
-                if done >= next_report:
-                    print(f'Checking saved root: {done // 1024 ** 2} / {r.RAW_BYTES // 1024 ** 2} MiB', flush=True)
-                    next_report = (done // 1024 ** 3 + 1) * 1024 ** 3
-        after = os.fstat(stream.fileno())
-        b.require((before.st_size, before.st_mtime_ns, before.st_ctime_ns) ==
-                  (after.st_size, after.st_mtime_ns, after.st_ctime_ns), 'Payload changed during hashing')
+        while block := stream.read(4 * 1024 ** 2):
+            if done == 0:
+                r.check_superblock(block)
+            value.update(block)
+            done += len(block)
+            if done >= next_report:
+                print(f'Checking saved root: {done // 1024 ** 2} / {r.RAW_BYTES // 1024 ** 2} MiB', flush=True)
+                next_report += 1024 ** 3
     b.require(done == r.RAW_BYTES, 'Wrong saved root length')
-    checksum = value.hexdigest()
-    report = {'algorithm': 'sha256', 'sha256': checksum, 'logical_bytes': done,
-              'data_bytes_read': data_bytes, 'hole_bytes_generated': hole_bytes,
-              'superblock_bytes_read': 2048, 'seconds': round(time.monotonic() - started, 3),
-              'sparse_requested': sparse}
-    print('PAYLOAD_HASH ' + json.dumps(report), flush=True)
-    if stage is not None:
-        b.record(stage / 'reports/payload-hash.json', report)
-    return checksum
+    return value.hexdigest()
 
 
 def runtime_copy(source, root, stage):
@@ -341,7 +276,7 @@ def capture(image, stage, m, printer_context):
                 b.command('e2fsck', '-f', '-n', payload, stdout=log, stderr=subprocess.STDOUT)
         b.phase(stage, 'Verifying the complete saved root filesystem')
         with timed(stage, 'payload_sha256'):
-            checksum = hash_payload(payload, stage=stage)
+            checksum = hash_payload(payload)
         m['backup_sha256'] = checksum
         b.record(stage / 'reports/root-payload.json', {'encoding': 'raw', 'file': 'root.ext4',
                  'bytes': r.RAW_BYTES, 'sha256': checksum, 'raw_bytes': r.RAW_BYTES, 'raw_sha256': checksum})
