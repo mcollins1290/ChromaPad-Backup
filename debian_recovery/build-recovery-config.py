@@ -5,6 +5,8 @@ import recovery_build_common as c
 from recovery_build_common import b
 import chromapad_recovery as r
 from package_recovery_runtime import package
+from recovery_artifacts import ArtifactCache
+from recovery_initramfs import guarded_initramfs
 
 def configure(stage,m,image=None,rolling=False):
     b.require((stage/'reports/base-built.json').exists(),'Base incomplete')
@@ -31,13 +33,9 @@ def configure(stage,m,image=None,rolling=False):
     (bundle/'target-mbr.bin').write_bytes(base64.b64decode(evidence['saved_mbr_base64']))
     with c.usb_image(stage,True,image=image) as (fat,root):
         b.phase(stage,'Build guarded recovery initramfs in the offline ARM runtime')
-        with c.scratch(root) as work:
-            for source,name in [(stage/'inputs/initrd.raw','initrd.raw'),((stage if rolling else c.LOCAL)/'recovery-emmc-guard.sh','recovery-emmc-guard.sh'),(c.LOCAL/'build_recovery_initramfs_arm.py','build.py')]:shutil.copyfile(source,work/name)
-            with c.emulator(),c.minimal_devices(root):
-                result=c.arm(root,'/usr/bin/python3','/var/tmp/recovery-build/build.py')
-                (stage/'reports/initramfs-build.txt').write_text(result+'\n')
-            shutil.copy2(work/'initramfs-report.json',stage/'reports/initramfs-report.json')
-            b.command('mkimage','-A','arm64','-O','linux','-T','ramdisk','-C','gzip','-a','0','-e','0','-n','ChromaPad protected recovery','-d',work/'guarded-initrd.raw',fat/'uInitrd')
+        cache=ArtifactCache(stage,enabled=rolling)
+        guard=(stage if rolling else c.LOCAL)/'recovery-emmc-guard.sh'
+        shutil.copy2(guarded_initramfs(root,stage,guard,cache),fat/'uInitrd')
         shutil.copy2(boot/'Image',fat/'Image');shutil.copy2(boot/'meson-sm1-chromapad-emmc.dtb',fat/'meson-sm1-chromapad.dtb')
         args='root=UUID='+m['usb_root_uuid']+' rootfstype=ext4 rootwait rw fsck.repair=preen console=ttyAML0,115200n8 console=tty1 consoleblank=0 net.ifnames=0 panic=0 '+' '.join(b.USB_ARGS)+' chromapad.emmc_probe=readonly chromapad.recovery='+m['build_id']+' systemd.gpt_auto=no rd.systemd.gpt_auto=no noresume'
         script=(stage/'inputs/usb-boot.cmd').read_text()
@@ -73,7 +71,7 @@ def configure(stage,m,image=None,rolling=False):
         p=root/'etc/systemd/system/default.target'
         if p.exists() or p.is_symlink():p.unlink()
         p.symlink_to('/usr/lib/systemd/system/multi-user.target')
-        runtime=package(root,stage,c.LOCAL/'chromapad_recovery.py')
+        runtime=package(root,stage,c.LOCAL/'chromapad_recovery.py',cache=cache)
         b.record(stage/'reports/ram-runtime.json',runtime)
         shutil.copy2(stage/'ram-tools.tar.gz',bundle/'ram-tools.tar.gz')
         ref=json.loads((c.LOCAL/'protected-reference.json').read_text(encoding='utf-8-sig'))

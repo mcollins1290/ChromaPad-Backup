@@ -21,7 +21,10 @@ class WorkflowTests(unittest.TestCase):
     def test_sigterm_runs_cleanup(self):
         with tempfile.TemporaryDirectory() as d:
             marker=Path(d)/'cleanup'
-            script="import sys,signal;from pathlib import Path;import recovery_build_common as c;c.install_signal_handlers();print('ready',flush=True)\ntry:signal.pause()\nfinally:Path(sys.argv[1]).write_text('cleanup ran')\n"
+            # Keep the readiness handshake inside try/finally, and use a
+            # bounded wait so a signal arriving just before the wait cannot
+            # strand the child in signal.pause().
+            script="import sys,signal,time;from pathlib import Path;import recovery_build_common as c;c.install_signal_handlers()\ntry:\n print('ready',flush=True)\n while True:time.sleep(0.05)\nfinally:Path(sys.argv[1]).write_text('cleanup ran')\n"
             child=subprocess.Popen([sys.executable,'-c',script,str(marker)],cwd=Path(__file__).parent,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
             try:
                 self.assertEqual(child.stdout.readline().strip(),'ready')

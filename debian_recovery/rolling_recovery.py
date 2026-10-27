@@ -359,6 +359,8 @@ def finish(image, stage, m):
     with timed(stage, 'launcher_smoke'):
         module('smoke-recovery-launcher.py').smoke(stage, m, image=image)
     b.require(not b.run('losetup', '-j', image), 'Recovery image still mounted')
+    from recovery_artifacts import publish_artifacts
+    publish_artifacts(stage)
     manifest = json.loads((stage / 'payload/manifest.json').read_text())
     return {'status': 'VERIFIED_ROLLING_RECOVERY_IMAGE', 'image': str(image),
             'build_id': m['build_id'], 'bytes': image.stat().st_size,

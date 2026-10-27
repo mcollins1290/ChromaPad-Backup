@@ -172,3 +172,36 @@ New nested timings separate `consistent_rsync`, `boot_files_copy`,
 `application_pause_and_resume` includes service stop/start; durations overlap
 and must not be summed. `rsync-final.txt` holds the sole copy report, and the
 obsolete `rsync-initial.txt` report is removed on export.
+
+## Verified recovery artifact reuse
+
+Rolling backups can reuse the guarded initramfs and RAM tool archive. Input
+fingerprints cover file contents, permissions/ownership, symlink targets,
+builder code and the complete selected dependency set. RAM packaging resolves
+its dependency graph again on every lookup, including new Python/Pillow files
+and changes in library search precedence. Initramfs inputs include the raw
+initrd, generated guard, target-tool loader resolution, tool/library contents,
+initramfs hooks and package state. Re-created input timestamps alone do not
+invalidate a content-equivalent artifact.
+
+Artifacts occupy two fixed slots under the root-private disposable directory
+`/var/tmp/chromapad-recovery-artifacts`, excluded from the saved system. A cache
+hit verifies the artifact's SHA-256 and the copy used by the build. Missing,
+changed or corrupt entries rebuild normally. New artifacts are published only
+after image validation and the launcher smoke test succeed. Cache publication
+errors are diagnostic and do not invalidate an otherwise verified backup.
+Deleting this cache simply forces rebuilding.
+
+The first successful backup populates the cache; the following unchanged run
+can benefit. `/media/raid1/coprint/backup-info/artifact-cache.json` reports
+`BUILT` or `HIT` and per-artifact seconds including input checks. New boot
+arguments, manifests and restore authorization are still generated each run;
+final image validation, toolchain/display checks, launcher smoke, the full
+payload checksum and restore readback remain enabled.
+
+A read-only experiment verified fresh artifacts against the last successful
+image by comparing their contents, permissions, ownership and symlinks. A
+second lookup in an isolated cache reused byte-identical artifacts: combined
+artifact work fell from 60.7s to 15.1s. This is a component benchmark with warm
+filesystem caches, not a measured full-backup saving. Normal backups still
+need measurement after the production cache has been populated.

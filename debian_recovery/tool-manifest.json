@@ -6,7 +6,7 @@
     "assets/usb-prefix.bin": "0ee92b10e674246a744bd075da28fe09a0347921e67246ab3dc813ae9dfd5fee",
     "audit-recovery-layout.py": "719735bf273036534c4934389be8a4d34a935ef80dbac09afafdb52a30202fb4",
     "build-recovery-base.py": "5eb74fc76e4bc14a55f9fdeb31305ece2f7464b15e2eab792bdd093ef927576e",
-    "build-recovery-config.py": "cdb0d40f82b9abc22b9966dbb3b3d1764b1e76980f3a5eb7231cf3f4f946c4af",
+    "build-recovery-config.py": "1dbe328a90200a3980c7a439f565c087a202b2619013677c4e4cc9657acfad4f",
     "build_recovery_initramfs_arm.py": "9e36012e284826707ff97956f58018511ac5188fbc8bda6d25823b16939031dc",
     "chromapad-debian-recovery-backup": "646797a35773b8cb3c7f5813bd9a4bd5190ea1c2d5bb97513a0485d0b3883102",
     "chromapad-debian-recovery-backup.service": "16d9163c8e47ca6480ff97a5a412f73f98687b129ef51ad3571e942637c69cfd",
@@ -16,7 +16,7 @@
     "chromapad_recovery_backup.py": "326534a237d441b88327bbe70250b610b5ed93117d746df05e1fe4d4ddbdaf75",
     "emmc-readiness-evidence.json": "75f0981db2558918895b9a314e23f9195a963f2b0501826073eed5d2efb61240",
     "make_recovery_arm.py": "7c3da792551c5ad12ecf0f27483646a91f22e0bf3bc394aa247e59a7294ac37c",
-    "package_recovery_runtime.py": "a26c25a9f458877653c696e0c2c34b96690b95bc00ce1a54a07235e67b256a23",
+    "package_recovery_runtime.py": "81029edea4805b6caf42306ee269e40b0f16b65d4cd6f2951bff53f6c97fc7f5",
     "prepare-recovery-guard.py": "6b58ae2ef8ac1a5efd6db9d7078c10804567ffd31d183964642a8d115238c8d3",
     "prepare-recovery-inputs.py": "ae62f062ac40f9f044e8a719ce857cc7727e28c51ef2e1ec78a6769fdf1f1637",
     "probe-emmc-guard.sh": "c1be14db398dc4690f3592b4afec754d127579803d8fa789e7d2b84516302b16",
@@ -32,13 +32,16 @@
     "test-recovery-engine.py": "f012794a608281e51ca3c212f237f58b394e6881811e124e34f010817627693d",
     "test-recovery-shutdown.py": "97eb125cb0b65c4462055be2fa04f61f370fe6a913c21e109749737f8e24abaa",
     "test-recovery-ui.py": "1a1139e325b0e73c3dcf9d30de89d4eef401f7f6aa01dac53d17b5dd744630d8",
-    "test-workflow-control.py": "b43f997c0df12950da46c3e68ead0789449d64a12323c242b1ed7fbcfb6e9f83",
+    "test-workflow-control.py": "e8d3987ad1c60c74f5e68e0d7bd50ac63ef114dcc8191f88b148f6845569107b",
     "test_debian_backup.py": "b3f5eb5fd3f127efbc90208191bd574c8b0ed6c8ab14a7b6e3b2ec53eb7b8f06",
     "validate-recovery-image.py": "979ad3e7e07361f0be053c9efa92f459fb371da278e1d57322e8d8544a0d3623",
-    "rolling_recovery.py": "0a34719d78f84400a7352e0e3a0c0e48303e3c50752e85bd4de7cfa857dec5e9",
+    "rolling_recovery.py": "9ea8916a768ace44382ba28b342b652b2e58b675d4952f2d345d5dce7159f30e",
     "test-rolling-recovery.py": "d15377bd41ec02e08ec8bcf245fc48b5f3352a9573c9f5e619cf1ca1febb1cec",
     "test-rolling-filesystems.py": "01058cd22a817cc28422cb6e42c919d40e65f3b9f0d00ed93e95d503dcb1bc55",
     "nas_payload_hash.py": "821042f43de953459c9562ac50c25d12559ac137a8cf69e8ce68f7623422b01a",
-    "test-nas-payload-hash.py": "ec80ddb8f5f15706a1b3d6c7cab31335b92c21877bb99d510e7772f78f7009a5"
+    "test-nas-payload-hash.py": "ec80ddb8f5f15706a1b3d6c7cab31335b92c21877bb99d510e7772f78f7009a5",
+    "recovery_artifacts.py": "9a7449af3e03e8d641335604448e8b3c4ba59af41bca97e4d613b071baf10c4b",
+    "recovery_initramfs.py": "275de8fec32d3188e97177fd0bfffa6cbdcf4fa6e6aa0ee2cc6eb3e754c533f5",
+    "test-recovery-artifacts.py": "f741959194af40468dc277b5bccfa3950ab099da728fb042d3ac8b974f76cfe6"
   }
 }

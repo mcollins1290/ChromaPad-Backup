@@ -1,11 +1,12 @@
 """Build a minimal ARM RAM toolchain from the verified offline Debian root."""
-import os,re,shutil,stat,subprocess,tarfile
+import os,re,shutil,stat,subprocess,tarfile,time,sys
 from pathlib import Path
 
-def package(root,out,engine):
+def package(root,out,engine,cache=None):
     root=Path(root);out=Path(out);tree=out/'ram-tools'
     if tree.exists():raise RuntimeError('RAM runtime tree already exists')
-    tree.mkdir();copied=set();elfs=[]
+    started=time.monotonic()
+    copied=set();elfs=[];entries={}
     def add(relative):
         relative=Path(str(relative).lstrip('/'))
         if '..' in relative.parts:raise RuntimeError('Unsafe runtime path')
@@ -13,21 +14,17 @@ def package(root,out,engine):
         if str(relative) in copied:return
         copied.add(str(relative))
         src=root/relative;dst=tree/relative
-        dst.parent.mkdir(parents=True,exist_ok=True)
         if src.is_symlink():
             link=os.readlink(src)
             if link.startswith('/'):
                 target=Path(link.lstrip('/'))
                 link=os.path.relpath(tree/target,dst.parent)
             else:target=Path(os.path.normpath(str(relative.parent/link)))
-            dst.symlink_to(link);add(target);return
+            entries[str(relative)]={'source':src,'link':link};add(target);return
         if not src.is_file():raise RuntimeError('Runtime dependency missing: '+str(src))
-        shutil.copy2(src,dst)
+        entries[str(relative)]={'source':src}
         with src.open('rb') as f:
             if f.read(4)==b'\x7fELF':elfs.append(src)
-    for name,target in [('bin','usr/bin'),('sbin','usr/sbin'),('lib','usr/lib')]:
-        (tree/name).symlink_to(target)
-    (tree/'usr/lib').mkdir(parents=True,exist_ok=True)
     # Shared-library names in /lib are canonicalized to /usr/lib to avoid duplicate copies.
     def canonical(name):return 'usr/'+name if name.startswith(('lib/','bin/','sbin/')) else name
     for name in ('python3','mount','umount','findmnt','udevadm','systemctl','sync','true','env'):
@@ -54,13 +51,30 @@ def package(root,out,engine):
             if found is None:raise RuntimeError('Missing '+name+' for '+str(binary))
             add(str(found.relative_to(root)))
     for name in ('passwd','group','nsswitch.conf','hosts'):add('etc/'+name)
-    for name in ('tmp','run','root','dev','proc','sys','state','payload','usb-boot','host/root','recovery'):(tree/name).mkdir(parents=True,exist_ok=True)
-    (tree/'tmp').chmod(0o1777)
-    shutil.copy2(engine,tree/'recovery/chromapad_recovery.py')
-    shutil.copy2(Path(engine).with_name('recovery_ui.py'),tree/'recovery/recovery_ui.py')
-    (tree/'recovery/runtime.marker').write_text('ChromaPad recovery RAM tools v1\n')
-    size=sum(p.stat().st_size for p in tree.rglob('*') if p.is_file() and not p.is_symlink())
-    if size>350*1024**2:raise RuntimeError('RAM runtime too large: '+str(size))
-    with tarfile.open(out/'ram-tools.tar.gz','w:gz',compresslevel=1) as tar:
-        for p in sorted(tree.iterdir()):tar.add(p,arcname=p.name)
-    return {'uncompressed_file_bytes':size,'elf_files':len(elfs),'files':len(copied)}
+    def build():
+        tree.mkdir()
+        for name,target in [('bin','usr/bin'),('sbin','usr/sbin'),('lib','usr/lib')]:
+            (tree/name).symlink_to(target)
+        (tree/'usr/lib').mkdir(parents=True,exist_ok=True)
+        for name,entry in entries.items():
+            dst=tree/name;dst.parent.mkdir(parents=True,exist_ok=True)
+            if 'link' in entry:dst.symlink_to(entry['link'])
+            else:shutil.copy2(entry['source'],dst)
+        for name in ('tmp','run','root','dev','proc','sys','state','payload','usb-boot','host/root','recovery'):(tree/name).mkdir(parents=True,exist_ok=True)
+        (tree/'tmp').chmod(0o1777)
+        shutil.copy2(engine,tree/'recovery/chromapad_recovery.py')
+        shutil.copy2(Path(engine).with_name('recovery_ui.py'),tree/'recovery/recovery_ui.py')
+        (tree/'recovery/runtime.marker').write_text('ChromaPad recovery RAM tools v1\n')
+        size=sum(p.stat().st_size for p in tree.rglob('*') if p.is_file() and not p.is_symlink())
+        if size>350*1024**2:raise RuntimeError('RAM runtime too large: '+str(size))
+        with tarfile.open(out/'ram-tools.tar.gz','w:gz',compresslevel=1) as tar:
+            for p in sorted(tree.iterdir()):tar.add(p,arcname=p.name)
+        return {'uncompressed_file_bytes':size,'elf_files':len(elfs),'files':len(copied)}
+    if cache is None:
+        return build()
+    from recovery_artifacts import root_records,file_record
+    inputs={'schema':1,'python':sys.version,'builder':file_record(__file__),
+            'engine':file_record(engine),'display':file_record(Path(engine).with_name('recovery_ui.py')),
+            'files':root_records(root,entries),
+            'links':{name:entry['link'] for name,entry in entries.items() if 'link' in entry}}
+    return cache.get('runtime',inputs,out/'ram-tools.tar.gz',build,started=started)

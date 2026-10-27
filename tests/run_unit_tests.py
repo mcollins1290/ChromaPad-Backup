@@ -16,7 +16,7 @@ def main():
         root / 'debian_recovery': (
             'test_debian_backup.py', 'test-recovery-engine.py',
             'test-recovery-ui.py', 'test-recovery-shutdown.py',
-            'test-workflow-control.py', 'test-rolling-recovery.py', 'test-nas-payload-hash.py',
+            'test-workflow-control.py', 'test-rolling-recovery.py', 'test-nas-payload-hash.py', 'test-recovery-artifacts.py',
         ),
     }
     env = {**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}

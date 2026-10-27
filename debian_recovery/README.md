@@ -15,6 +15,8 @@ The main components are:
 | `recovery_ui.py` | Draw the progress and result screens with Python/Pillow directly to the Linux framebuffer. |
 | `recovery_shutdown.py` | Read touchscreen taps and request shutdown after verified recovery completion. |
 | `build-recovery-config.py` | Assemble guarded boot files, service configuration and the recovery manifest. |
+| `recovery_artifacts.py` | Reuse content-pinned artifacts and publish new cache entries only after validation. |
+| `recovery_initramfs.py` | Resolve guarded-initramfs inputs and build or reuse the verified artifact. |
 
 The earlier generation builder scripts remain because they supply shared
 helpers and preserve compatibility with earlier compressed recovery payloads.
