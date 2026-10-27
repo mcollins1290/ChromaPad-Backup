@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -177,6 +178,52 @@ def hash_payload(path):
     return value.hexdigest()
 
 
+
+def nas_operation(request, stage=None):
+    source = (c.LOCAL / 'nas_payload_hash.py').read_text()
+    script = 'REQUEST = ' + repr(request) + '\n' + source
+    command = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
+               '-o', 'StrictHostKeyChecking=yes', '-o', 'ServerAliveInterval=15',
+               '-o', 'ServerAliveCountMax=3', 'root@192.168.0.2',
+               'unshare', '--mount', '--propagation', 'private', 'python3', '-']
+    result = subprocess.run(command, input=script, text=True, capture_output=True, timeout=1800)
+    if stage is not None:
+        (stage / 'reports/nas-payload-hash.txt').write_text(result.stdout + result.stderr)
+    for line in result.stdout.splitlines():
+        if not line.startswith('NAS_HASH_RESULT '):
+            print(line, flush=True)
+    b.require(result.returncode == 0, 'NAS checksum helper failed: ' + result.stderr[-2000:])
+    records = [line.removeprefix('NAS_HASH_RESULT ') for line in result.stdout.splitlines()
+               if line.startswith('NAS_HASH_RESULT ')]
+    b.require(len(records) == 1, 'Missing or ambiguous NAS checksum result')
+    report = json.loads(records[0])
+    b.require(report.get('schema') == 1 and report.get('location') == 'NAS', 'Invalid NAS checksum report')
+    return report
+
+
+def nas_preflight():
+    report = nas_operation({'operation': 'probe'})
+    b.require(report.get('ready') is True, 'NAS is not ready for checksumming')
+
+
+def hash_payload_on_nas(image, stage, m):
+    b.require(not b.run('losetup', '-j', image), 'Unmount the pad image before NAS hashing')
+    info = require_regular(image, c.USB_BYTES)
+    start, sectors = c.USB_PARTS[1]
+    request = {'operation': 'hash', 'image_bytes': info.st_size, 'image_inode': info.st_ino,
+               'start_sector': start, 'sectors': sectors, 'usb_disk_id': m['usb_disk_id'],
+               'usb_root_uuid': m['usb_root_uuid'], 'root_uuid': b.ROOT_UUID, 'raw_bytes': r.RAW_BYTES}
+    report = nas_operation(request, stage)
+    b.require(report.get('cleanup_complete') is True and report.get('bytes') == r.RAW_BYTES
+              and report.get('root_uuid') == b.ROOT_UUID and report.get('usb_root_uuid') == m['usb_root_uuid']
+              and isinstance(report.get('sha256'), str) and re.fullmatch('[0-9a-f]{64}', report['sha256']),
+              'NAS payload checksum report does not match this image')
+    after = image.stat()
+    b.require((info.st_ino, info.st_size, info.st_mtime_ns) ==
+              (after.st_ino, after.st_size, after.st_mtime_ns), 'Pad image changed during NAS hashing')
+    b.record(stage / 'reports/payload-hash.json', report)
+    return report['sha256']
+
 def runtime_copy(source, root, stage):
     # Keep the payload in place while refreshing the smaller recovery runtime.
     # The complete /home and /root contents remain in the saved root filesystem.
@@ -274,18 +321,19 @@ def capture(image, stage, m, printer_context):
         with timed(stage, 'payload_fsck_after'):
             with (stage / 'reports/root-fsck-after.txt').open('w') as log:
                 b.command('e2fsck', '-f', '-n', payload, stdout=log, stderr=subprocess.STDOUT)
-        b.phase(stage, 'Verifying the complete saved root filesystem')
-        with timed(stage, 'payload_sha256'):
-            checksum = hash_payload(payload)
-        m['backup_sha256'] = checksum
-        b.record(stage / 'reports/root-payload.json', {'encoding': 'raw', 'file': 'root.ext4',
-                 'bytes': r.RAW_BYTES, 'sha256': checksum, 'raw_bytes': r.RAW_BYTES, 'raw_sha256': checksum})
         # Only generated bundle metadata is replaced; the raw filesystem stays.
         for child in list(bundle.iterdir()):
             if child.name != 'root.ext4':
                 clear_child(bundle, child.name)
         b.require(shutil.disk_usage(root).free > 768 * 1024 ** 2, 'Recovery image needs 768 MiB free for boot backup and metadata')
         b.command('sync', '-f', root)
+    # Exiting usb_image flushes and removes every pad mount/loop before the NAS opens it.
+    b.phase(stage, 'Verifying the complete saved root filesystem locally on the NAS')
+    with timed(stage, 'payload_sha256'):
+        checksum = hash_payload_on_nas(image, stage, m)
+    m['backup_sha256'] = checksum
+    b.record(stage / 'reports/root-payload.json', {'encoding': 'raw', 'file': 'root.ext4',
+             'bytes': r.RAW_BYTES, 'sha256': checksum, 'raw_bytes': r.RAW_BYTES, 'raw_sha256': checksum})
     for name in ('usb-boot.cmd', 'usb-prefix.bin'):
         shutil.copyfile(c.LOCAL / 'assets' / name, inputs / name)
     guard = (c.LOCAL / 'probe-emmc-guard.sh').read_text().replace('38327d56-529b-498f-8b1a-e81b534bfeb9', m['usb_root_uuid'])

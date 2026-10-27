@@ -35,8 +35,10 @@
     "test-workflow-control.py": "b43f997c0df12950da46c3e68ead0789449d64a12323c242b1ed7fbcfb6e9f83",
     "test_debian_backup.py": "b3f5eb5fd3f127efbc90208191bd574c8b0ed6c8ab14a7b6e3b2ec53eb7b8f06",
     "validate-recovery-image.py": "979ad3e7e07361f0be053c9efa92f459fb371da278e1d57322e8d8544a0d3623",
-    "rolling_recovery.py": "e15c12340f975bde444d95d501af1d082789c794ccb24d741b71fec279b709d9",
+    "rolling_recovery.py": "89f44e36bc72a3df3bb64b32e3e2917a7d66eabe17c75812f042fe043c7e42ad",
     "test-rolling-recovery.py": "cb1a17ffe78d3f90084bf2f5fbe94ace1001900a291cf6f86977ff1b091f2a5a",
-    "test-rolling-filesystems.py": "01058cd22a817cc28422cb6e42c919d40e65f3b9f0d00ed93e95d503dcb1bc55"
+    "test-rolling-filesystems.py": "01058cd22a817cc28422cb6e42c919d40e65f3b9f0d00ed93e95d503dcb1bc55",
+    "nas_payload_hash.py": "821042f43de953459c9562ac50c25d12559ac137a8cf69e8ce68f7623422b01a",
+    "test-nas-payload-hash.py": "ec80ddb8f5f15706a1b3d6c7cab31335b92c21877bb99d510e7772f78f7009a5"
   }
 }

@@ -32,8 +32,8 @@ original updater. The final paused copy and comparison use the same quick
 check. Files changed while deliberately preserving both size and timestamps
 are not detected by that check. The finished saved filesystem is hashed once;
 recovery verifies that hash before writing and checks the restored bytes.
-This full checksum still takes time over the NAS connection, even when rsync
-has few files to update. The first run also populates the recovery environment;
+The checksum runs locally on the NAS after the pad fully unmounts the image,
+avoiding a full payload read back over the network. The first run also populates the recovery environment;
 later runs reuse its unchanged files.
 Only previously active printer services are stopped and restarted. Other
 application writers pause for the final consistent copy. Printer services
@@ -76,7 +76,7 @@ The older generation builder remains available for history/rollback, but the
 rolling command does not use `coprint_2_debian` or retain its old build products.
 
 For source development, run `python3 tests/run_unit_tests.py` on Linux with
-Python 3, Pillow, rsync and DejaVu Sans installed. This runs the 102 unit tests
+Python 3, Pillow, rsync and DejaVu Sans installed. This runs the unit suites
 using temporary files and mocked device/service operations. It does not start
 a backup, restore the pad or power it off. Private-input integration tests are
 described in the [builder notes](debian_recovery/README.md).
@@ -122,3 +122,32 @@ sidecars) and `/root/.codex/models_cache.json` are excluded as transient logs
 and cache. Codex state databases, session history, configuration, skills and
 plugins remain included. Close Codex for a consistent copy of that state;
 background diagnostic/cache updates alone no longer fail the final comparison.
+
+## NAS-side payload verification
+
+Backup now requires noninteractive root SSH access to `192.168.0.2` from the
+pad, with an already trusted host key. Preflight checks SSH, Python 3, the NAS
+filesystem tools and absence of a surviving NAS checksum mount before any
+image changes or printer stops. SSH failures stop the job; verification is
+never skipped or silently weakened.
+
+After capture, runtime refresh and the saved-filesystem check, the pad syncs
+and unmounts all image filesystems and detaches its loops. It then sends the
+pinned `nas_payload_hash.py` helper over SSH. In a private mount namespace,
+the NAS checks the image identity, partition geometry and filesystem UUIDs,
+mounts only the outer recovery filesystem read-only without journal replay,
+and hashes every byte of the saved payload with SHA-256. It returns the result
+only after unmounting and detaching its loop. Packaging then resumes on the pad.
+The recovery format, pre-restore checksum and restored-byte readback are unchanged.
+
+The NAS requires `python3`, `unshare`, `losetup`, `blkid`, `mount` and `umount`.
+No helper installation on the NAS is needed. Its private mount and local lock
+isolate checksum jobs. The pad retains `nas-payload-hash.txt` and
+`payload-hash.json` in `backup-info`; `payload_sha256` includes SSH and remote
+cleanup time. An SSH timeout or cleanup failure fails the backup; inspect the
+NAS loop attachment before retrying if preflight reports it is still busy.
+The full helper operation has a 30-minute timeout.
+
+A read-only benchmark on the same verified image took about 3m40s including
+SSH, versus 8m57s when hashed on the pad, with identical checksums. A complete
+backup with this integration is still needed to measure total runtime.

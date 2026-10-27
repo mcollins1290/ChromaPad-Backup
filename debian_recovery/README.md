@@ -51,7 +51,7 @@ installed, run:
 python3 tests/run_unit_tests.py
 ```
 
-These 102 tests use synthetic data, temporary files and mocked hardware/service
+These tests use synthetic data, temporary files and mocked hardware/service
 operations. They cover the launcher, printer lifecycle, image ownership,
 restore payload checks, touchscreen rendering and shutdown gating. They do
 not need the three private build inputs.

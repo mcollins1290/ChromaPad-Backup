@@ -21,7 +21,7 @@ DEST = Path('/media/raid1/coprint')
 IMAGE = DEST / 'coprint-debian.img'
 STATE = DEST / 'coprint-debian.json'
 INFO = DEST / 'backup-info'
-DEPENDENCIES = ('rsync', 'mkimage', 'fdtget', 'readelf', 'losetup', 'mount', 'umount',
+DEPENDENCIES = ('ssh', 'rsync', 'mkimage', 'fdtget', 'readelf', 'losetup', 'mount', 'umount',
                 'unshare', 'cpio', 'gzip', 'fsck.vfat', 'e2fsck', 'mkfs.vfat',
                 'mkfs.ext4', 'resize2fs', 'fstrim', 'blkid', 'findmnt', 'chroot')
 
@@ -90,6 +90,7 @@ def readiness(rolling):
     old = rolling.b.run('systemctl', 'show', 'chromapad-debian-recovery-backup.service', '-p', 'ActiveState', '--value')
     require(old not in ('active', 'activating', 'deactivating'), 'The older backup service is running')
     rolling.b.source_identity(printers_stopped=False)
+    rolling.nas_preflight()
     checked = printers.plan()
     return {'status': 'PLAN_ONLY', 'image': str(IMAGE), 'destination': str(DEST / 'coprint.img'),
             'mode': 'UPDATE_IN_PLACE' if record else 'CREATE_FIRST_DEBIAN_IMAGE',
