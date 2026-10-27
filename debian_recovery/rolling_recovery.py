@@ -250,12 +250,12 @@ def runtime_copy(source, root, stage):
         clear_child(state, name.name)
 
 
-def copy_system(source, destination, log_path, allow_vanished=False):
+def copy_system(source, destination, log_path):
     """Use rsync's normal size/mtime quick check, including on the final pass."""
     with log_path.open('w') as log:
         result = subprocess.run([*b.RSYNC, '--stats', str(source).rstrip('/') + '/',
                                  str(destination) + '/'], stdout=log, stderr=subprocess.STDOUT)
-    b.require(result.returncode in ((0, 24) if allow_vanished else (0,)), 'System file copy failed')
+    b.require(result.returncode == 0, 'System file copy failed')
 
 
 def capture(image, stage, m, printer_context):
@@ -286,29 +286,32 @@ def capture(image, stage, m, printer_context):
                     for suffix in ('boot0', 'boot1'):
                         b.require(b.digest(identity['disk'] + suffix) == reference[suffix], 'Hardware boot reference differs')
                 b.phase(stage, 'Updating the saved system inside the recovery image')
-                with timed(stage, 'initial_rsync'):
-                    copy_system(Path('/'), saved, stage / 'reports/rsync-initial.txt', allow_vanished=True)
                 with timed(stage, 'quiesced_final_copy_and_comparison'):
-                    with b.quiesced(stage):
-                        b.phase(stage, 'Final consistent copy; application writers are paused')
-                        copy_system(Path('/'), saved, stage / 'reports/rsync-final.txt')
-                        bootfat = inputs / 'fat'
-                        bootfat.mkdir()
-                        b.command('rsync', '-rt', '--delete', '--modify-window=1', '/boot/emmc/', str(bootfat) + '/')
-                        comparison = b.comparison_result(b.run(*b.RSYNC, '--dry-run', '--itemize-changes', '/', str(saved) + '/'))
-                        b.record(stage / 'reports/root-comparison.json', comparison)
-                        b.require(not comparison['blocking'], 'Source changed during the final copy')
-                        b.require(not b.run('rsync', '-rcn', '--delete', '--itemize-changes', '/boot/emmc/', str(bootfat) + '/'), 'Boot copy differs')
-                        boot = b.validate_boot(bootfat, saved)
-                        b.require(b.source_identity() == identity, 'Source boot changed during backup')
-                        shutil.copytree(saved / 'usr/lib/chromapad/emmc', inputs / 'helpers')
-                        m['kernel'] = json.loads((saved / 'usr/lib/chromapad/emmc/identifiers.json').read_text())['kernel']
-                        shutil.copytree(bootfat / 'debian' / boot['generation'], inputs / 'emmc-boot')
-                        shutil.copyfile(saved / 'boot' / ('initrd.img-' + m['kernel']), inputs / 'initrd.raw')
-                        b.require((saved / 'usr/lib/python3/dist-packages/PIL/Image.py').is_file(), 'Recovery display library missing')
-                        policy = saved / 'etc/tmpfiles.d/chromapad-nginx-logs.conf'
-                        b.require(policy.is_file() and 'd /var/log/nginx 0755 root adm -' in policy.read_text(), 'nginx log recovery policy missing')
-                        b.command('sync', '-f', saved)
+                    with timed(stage, 'application_pause_and_resume'), b.quiesced(stage):
+                        b.phase(stage, 'Consistent system copy; application writers are paused')
+                        with timed(stage, 'consistent_rsync'):
+                            copy_system(Path('/'), saved, stage / 'reports/rsync-final.txt')
+                        with timed(stage, 'boot_files_copy'):
+                            bootfat = inputs / 'fat'
+                            bootfat.mkdir()
+                            b.command('rsync', '-rt', '--delete', '--modify-window=1', '/boot/emmc/', str(bootfat) + '/')
+                        with timed(stage, 'root_comparison'):
+                            comparison = b.comparison_result(b.run(*b.RSYNC, '--dry-run', '--itemize-changes', '/', str(saved) + '/'))
+                            b.record(stage / 'reports/root-comparison.json', comparison)
+                            b.require(not comparison['blocking'], 'Source changed during the final copy')
+                        with timed(stage, 'boot_validation_and_inputs'):
+                            b.require(not b.run('rsync', '-rcn', '--delete', '--itemize-changes', '/boot/emmc/', str(bootfat) + '/'), 'Boot copy differs')
+                            boot = b.validate_boot(bootfat, saved)
+                            b.require(b.source_identity() == identity, 'Source boot changed during backup')
+                            shutil.copytree(saved / 'usr/lib/chromapad/emmc', inputs / 'helpers')
+                            m['kernel'] = json.loads((saved / 'usr/lib/chromapad/emmc/identifiers.json').read_text())['kernel']
+                            shutil.copytree(bootfat / 'debian' / boot['generation'], inputs / 'emmc-boot')
+                            shutil.copyfile(saved / 'boot' / ('initrd.img-' + m['kernel']), inputs / 'initrd.raw')
+                            b.require((saved / 'usr/lib/python3/dist-packages/PIL/Image.py').is_file(), 'Recovery display library missing')
+                            policy = saved / 'etc/tmpfiles.d/chromapad-nginx-logs.conf'
+                            b.require(policy.is_file() and 'd /var/log/nginx 0755 root adm -' in policy.read_text(), 'nginx log recovery policy missing')
+                        with timed(stage, 'payload_sync'):
+                            b.command('sync', '-f', saved)
                 b.record(stage / 'reports/source.json', identity)
             # Klipper and application services are restored before offline work.
             b.phase(stage, 'Reclaiming unused blocks in the saved filesystem')

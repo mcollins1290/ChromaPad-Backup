@@ -171,6 +171,34 @@ class RawPayloadTests(unittest.TestCase):
                                    str(source) + '/', str(destination) + '/')
         self.assertIn('sessions/session.jsonl', difference)
 
+    def test_single_copy_preserves_metadata_links_and_full_comparison(self):
+        source, destination = self.root / 'source', self.root / 'destination'
+        source.mkdir()
+        destination.mkdir()
+        (destination / 'obsolete').write_text('delete this file')
+        (destination / 'config').write_text('previous contents')
+        config = source / 'config'
+        config.write_text('complete current configuration')
+        config.chmod(0o640)
+        os.setxattr(config, 'user.single-copy-fixture', b'preserved')
+        os.link(config, source / 'hardlink')
+        (source / 'symlink').symlink_to('config')
+        rolling.copy_system(source, destination, self.root / 'copy.log')
+        self.assertEqual((destination / 'config').read_bytes(), config.read_bytes())
+        self.assertEqual((destination / 'config').stat().st_mode & 0o777, 0o640)
+        self.assertEqual(os.getxattr(destination / 'config', 'user.single-copy-fixture'), b'preserved')
+        self.assertTrue(os.path.samefile(destination / 'config', destination / 'hardlink'))
+        self.assertEqual(os.readlink(destination / 'symlink'), 'config')
+        self.assertFalse((destination / 'obsolete').exists())
+        def comparison():
+            difference = rolling.b.run(*rolling.b.RSYNC, '--dry-run', '--itemize-changes',
+                                       str(source) + '/', str(destination) + '/')
+            return rolling.b.comparison_result(difference)
+        self.assertEqual(comparison()['blocking'], [])
+        # The final comparison still rejects source metadata drift after copying.
+        config.chmod(0o600)
+        self.assertTrue(comparison()['blocking'])
+
     def test_incremental_copy_keeps_unchanged_files_and_updates_changes(self):
         source = self.root / 'source'
         destination = self.root / 'destination'

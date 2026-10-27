@@ -121,6 +121,10 @@ def compact_reports(stage, owner):
         target.write_bytes(content)
         target.chmod(0o600)
         os.chown(target, owner.st_uid, owner.st_gid)
+    # The preliminary copy was removed; do not present its older report as current.
+    obsolete = INFO / 'rsync-initial.txt'
+    require(not obsolete.is_symlink(), 'Unsafe obsolete backup report')
+    obsolete.unlink(missing_ok=True)
     os.chown(INFO, owner.st_uid, owner.st_gid)
 
 

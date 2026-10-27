@@ -28,15 +28,15 @@ The image contains a sparse filesystem holding the saved Debian system and a
 smaller recovery environment. Updates preserve software, printer settings and
 user files, excluding transient files, mounted drives and routine logs.
 Rsync uses file size and modification time to skip unchanged files, like the
-original updater. The final paused copy and comparison use the same quick
-check. Files changed while deliberately preserving both size and timestamps
+original updater. One copy runs with application writers paused, followed
+by a full comparison using the same quick check. Files changed while deliberately preserving both size and timestamps
 are not detected by that check. The finished saved filesystem is hashed once;
 recovery verifies that hash before writing and checks the restored bytes.
 The checksum runs locally on the NAS after the pad fully unmounts the image,
 avoiding a full payload read back over the network. The first run also populates the recovery environment;
 later runs reuse its unchanged files.
 Only previously active printer services are stopped and restarted. Other
-application writers pause for the final consistent copy. Printer services
+application writers pause for the consistent copy and comparison. Printer services
 return before offline recovery packaging. Rehome before printing afterward.
 
 The image is incomplete during an update. An interruption can invalidate it;
@@ -90,7 +90,7 @@ failure. Timings use a monotonic clock; UTC start times help correlate logs.
 Nested phase durations overlap and must not be summed. `backup_work_total`
 covers image checks/initialization, capture and recovery finishing, including
 mount cleanup; it excludes readiness, report export and final activation.
-Capture details include firmware checks, rsync, the paused final copy,
+Capture details include firmware checks, rsync, the paused copy and comparison,
 printer stop/capture/restart, trimming, runtime refresh, filesystem checks and
 payload hashing. Finish details separate packaging, validation and smoke tests.
 Abrupt power loss may prevent report export; timing lines already written to
@@ -151,3 +151,24 @@ The full helper operation has a 30-minute timeout.
 A read-only benchmark on the same verified image took about 3m40s including
 SSH, versus 8m57s when hashed on the pad, with identical checksums. A complete
 backup with this integration is still needed to measure total runtime.
+
+## Single consistent system copy
+
+Routine backup performs one system rsync with application writers paused,
+then a full-tree dry-run comparison. The preliminary live copy was removed:
+it scanned the whole tree even for tiny updates and printers were already
+stopped during it. No source paths or metadata checks were dropped. Boot
+checks, source identity checks, final sync, NAS payload hashing and restore
+verification are unchanged.
+
+This avoids one scan (about 84 seconds in the preceding full backup), but
+actual savings depend on changed data and cache state. Application writers
+now remain paused for the entire copy; a large update or first full capture
+may pause them longer than the old two-copy approach. Only previously active
+services are restarted, and printers still return before offline packaging.
+
+New nested timings separate `consistent_rsync`, `boot_files_copy`,
+`root_comparison`, `boot_validation_and_inputs` and `payload_sync`.
+`application_pause_and_resume` includes service stop/start; durations overlap
+and must not be summed. `rsync-final.txt` holds the sole copy report, and the
+obsolete `rsync-initial.txt` report is removed on export.
