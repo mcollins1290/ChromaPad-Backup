@@ -83,7 +83,20 @@ described in the [builder notes](debian_recovery/README.md).
 
 ## Backup phase timing
 
-Rolling runs emit `TIMING_START` and `TIMING_END` lines in the service log,
+Phase timing is disabled by default. To enable it for future service runs,
+use `sudo systemctl edit chromapad-backup.service` and add:
+
+```ini
+[Service]
+Environment=CHROMAPAD_BACKUP_TIMINGS=1
+```
+
+Remove that setting to disable it again. Editing the service does not start a
+backup. For a direct foreground invocation, set `CHROMAPAD_BACKUP_TIMINGS=1`
+in the worker process's environment. When disabled, phase timing emits no log
+lines or new timing report; an older exported report remains historical data.
+
+Enabled runs emit `TIMING_START` and `TIMING_END` lines in the service log,
 including elapsed seconds and `OK` or `FAILED`. The latest run also saves
 `/media/raid1/coprint/backup-info/phase-timings.json`, even after a handled
 failure. Timings use a monotonic clock; UTC start times help correlate logs.

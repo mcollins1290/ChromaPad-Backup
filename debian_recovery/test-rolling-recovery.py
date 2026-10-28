@@ -33,7 +33,20 @@ class CapacityTests(unittest.TestCase):
                 c.configure_layout(bad)
 
 
+@patch.dict(os.environ, {'CHROMAPAD_BACKUP_TIMINGS': '1'})
 class PhaseTimingTests(unittest.TestCase):
+    def test_disabled_timing_is_silent_and_preserves_errors(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                patch.dict(os.environ, {'CHROMAPAD_BACKUP_TIMINGS': '0'}), \
+                patch.object(rolling.time, 'monotonic') as clock, \
+                patch('builtins.print') as output:
+            with self.assertRaisesRegex(ValueError, 'backup error'):
+                with rolling.timed(Path(tmp), 'disabled'):
+                    raise ValueError('backup error')
+            clock.assert_not_called()
+            output.assert_not_called()
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
     def test_nested_phases_and_failure_are_retained(self):
         with tempfile.TemporaryDirectory() as tmp:
             stage = Path(tmp)

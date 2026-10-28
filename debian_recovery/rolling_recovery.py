@@ -25,6 +25,9 @@ import recovery_build_common as c
 @contextlib.contextmanager
 def timed(stage, name):
     """Record inclusive wall time, including failed phases, using a monotonic clock."""
+    if os.environ.get('CHROMAPAD_BACKUP_TIMINGS') != '1':
+        yield
+        return
     started_utc = b.stamp()
     start = time.monotonic()
     status = 'FAILED'
