@@ -197,6 +197,16 @@ metadata covers dpkg status/diversions/overrides, package information files,
 alternatives, triggers and pending-update records. This targeted check complements content recovery
 after failures; it is not a full source-content comparison on routine runs.
 
+If the final source comparison finds differences, the rolling capture makes
+one additional copy and repeats the complete comparison while applications
+remain paused. Both passes retain the original checksum setting. This handles
+files disappearing between scans, such as Codex SQLite WAL/SHM sidecars after
+a connection closes, without excluding database state or accepting differences.
+Continuing changes after that single retry still fail the backup. The first
+differences are retained in `root-comparison-before-retry.json`; the retry copy
+has its own `rsync-retry.txt`. Normal matching captures do not run another copy.
+Checksum recovery can take substantially longer if this retry is needed.
+
 During the 2026-10-28 post-restore investigation, 733 package database files
 were found filled with zeros in both the saved filesystem and restored pad.
 Historical logs from the earlier capacity failure contained lost-write errors

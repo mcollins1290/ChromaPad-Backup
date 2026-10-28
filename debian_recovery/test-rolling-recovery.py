@@ -189,6 +189,51 @@ class RawPayloadTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             rolling.clear_child(self.root, '../outside')
 
+    def test_disappearing_sqlite_sidecars_are_removed_before_verified_success(self):
+        source, destination = self.root / 'source', self.root / 'destination'
+        codex = source / 'root/.codex'
+        codex.mkdir(parents=True)
+        destination.mkdir()
+        (self.root / 'reports').mkdir()
+        (codex / 'state_5.sqlite').write_bytes(b'unchanged database')
+        for suffix in ('-wal', '-shm'):
+            (codex / ('state_5.sqlite' + suffix)).write_bytes(b'temporary data')
+        rolling.copy_system(source, destination, self.root / 'copy.log', checksum=True)
+        for suffix in ('-wal', '-shm'):
+            (codex / ('state_5.sqlite' + suffix)).unlink()
+        # A same-size/mtime content difference must also be repaired on retry.
+        saved = destination / 'root/.codex/state_5.sqlite'
+        before = saved.stat()
+        saved.write_bytes(b'X' * before.st_size)
+        os.utime(saved, ns=(before.st_atime_ns, before.st_mtime_ns))
+        rolling.verify_system_copy(source, destination, self.root, checksum=True)
+        first = json.loads((self.root / 'reports/root-comparison-before-retry.json').read_text())
+        self.assertTrue(any('state_5.sqlite-wal' in line for line in first['blocking']))
+        self.assertEqual(json.loads((self.root / 'reports/root-comparison.json').read_text())['blocking'], [])
+        self.assertEqual(saved.read_bytes(), b'unchanged database')
+        self.assertFalse((saved.parent / 'state_5.sqlite-wal').exists())
+        self.assertFalse((saved.parent / 'state_5.sqlite-shm').exists())
+
+    def test_continuing_changes_fail_after_one_retry(self):
+        (self.root / 'reports').mkdir()
+        with patch.object(rolling.b, 'run', return_value='>fc........ etc/test\n') as compare, \
+                patch.object(rolling, 'copy_system') as copy:
+            with self.assertRaisesRegex(RuntimeError, 'after one retry'):
+                rolling.verify_system_copy(Path('/source'), Path('/saved'), self.root, checksum=True)
+        self.assertEqual(compare.call_count, 2)
+        self.assertTrue(all('--checksum' in call.args for call in compare.call_args_list))
+        copy.assert_called_once_with(Path('/source'), Path('/saved'),
+                                     self.root / 'reports/rsync-retry.txt', checksum=True)
+
+    def test_matching_copy_does_not_retry(self):
+        (self.root / 'reports').mkdir()
+        with patch.object(rolling.b, 'run', return_value='') as compare, \
+                patch.object(rolling, 'copy_system') as copy:
+            rolling.verify_system_copy(Path('/source'), Path('/saved'), self.root)
+        compare.assert_called_once()
+        self.assertNotIn('--checksum', compare.call_args.args)
+        copy.assert_not_called()
+
     def test_codex_logs_and_cache_excluded_but_history_and_state_preserved(self):
         source, destination = self.root / 'source', self.root / 'destination'
         source.mkdir()

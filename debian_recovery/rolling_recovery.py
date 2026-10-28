@@ -259,11 +259,28 @@ def runtime_copy(source, root, stage):
 
 
 def copy_system(source, destination, log_path, checksum=False):
-    """Use rsync's normal size/mtime quick check, including on the final pass."""
+    """Copy with content checksums when recovering an unverified image."""
     with log_path.open('w') as log:
         result = subprocess.run([*b.RSYNC, *(['--checksum'] if checksum else []), '--stats', str(source).rstrip('/') + '/',
                                  str(destination) + '/'], stdout=log, stderr=subprocess.STDOUT)
     b.require(result.returncode == 0, 'System file copy failed')
+
+
+def verify_system_copy(source, destination, stage, checksum=False):
+    """Allow one convergence copy, then require the same complete comparison."""
+    checks = ['--checksum'] if checksum else []
+    for attempt in range(2):
+        comparison = b.comparison_result(b.run(
+            *b.RSYNC, *checks, '--dry-run', '--itemize-changes',
+            str(source).rstrip('/') + '/', str(destination) + '/'))
+        b.record(stage / 'reports/root-comparison.json', comparison)
+        if not comparison['blocking']:
+            return
+        if attempt == 0:
+            b.record(stage / 'reports/root-comparison-before-retry.json', comparison)
+            b.phase(stage, 'Source changed during copy; retrying once with the same verification')
+            copy_system(source, destination, stage / 'reports/rsync-retry.txt', checksum=checksum)
+    b.require(False, 'Source changed during the final copy after one retry')
 
 
 def capture(image, stage, m, printer_context):
@@ -305,10 +322,8 @@ def capture(image, stage, m, printer_context):
                             bootfat.mkdir()
                             b.command('rsync', '-rt', '--delete', '--modify-window=1', '/boot/emmc/', str(bootfat) + '/')
                         with timed(stage, 'root_comparison'):
-                            checks = ['--checksum'] if m.get('verify_source_contents') else []
-                            comparison = b.comparison_result(b.run(*b.RSYNC, *checks, '--dry-run', '--itemize-changes', '/', str(saved) + '/'))
-                            b.record(stage / 'reports/root-comparison.json', comparison)
-                            b.require(not comparison['blocking'], 'Source changed during the final copy')
+                            verify_system_copy(Path('/'), saved, stage,
+                                               checksum=m.get('verify_source_contents', False))
                         with timed(stage, 'boot_validation_and_inputs'):
                             b.require(not b.run('rsync', '-rcn', '--delete', '--itemize-changes', '/boot/emmc/', str(bootfat) + '/'), 'Boot copy differs')
                             boot = b.validate_boot(bootfat, saved)
