@@ -210,6 +210,23 @@ snapshot was marked failed and requires checksum-based recapture; successful
 boot and a matching payload checksum alone were insufficient evidence of
 source-content integrity.
 
+The follow-up live-system audit compared 11,342 tracked files across 13 Git
+repositories against their object data, checked 8,679 Python environment files
+against wheel RECORD hashes, and validated Moonraker's SQLite database and
+stored record encodings. Twenty configuration/settings/script references from
+the last Ubuntu image matched except for the deliberate preheat-disable change.
+Existing local application patches were reviewed separately from corruption.
+
+A read-only extent scan found eight additional affected generated files in
+APT/linker caches, PackageKit transaction storage and the DKMS build cache.
+These were quarantined and regenerated. The working installed Wi-Fi module
+was retained unchanged; its source and kernel ABI matched the rebuilt cache.
+The final scan checked 142,541 files in the backup scope with no remaining
+unwritten file-data extents. This strengthens confidence in the repaired live
+source without asserting that every historical application value has an
+independent reference. A fresh checksum-based backup is still required before
+the held NAS image can be used again.
+
 This avoids one scan (about 84 seconds in the preceding full backup), but
 actual savings depend on changed data and cache state. Application writers
 now remain paused for the entire copy; a large update or first full capture
