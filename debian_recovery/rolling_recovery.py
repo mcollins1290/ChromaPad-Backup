@@ -20,6 +20,7 @@ import uuid
 import chromapad_debian_backup as b
 import chromapad_recovery as r
 import recovery_build_common as c
+import nas_payload_hash as nas
 
 
 @contextlib.contextmanager
@@ -216,8 +217,12 @@ def hash_payload_on_nas(image, stage, m):
     request = {'operation': 'hash', 'image_bytes': info.st_size, 'image_inode': info.st_ino,
                'start_sector': start, 'sectors': sectors, 'usb_disk_id': m['usb_disk_id'],
                'usb_root_uuid': m['usb_root_uuid'], 'root_uuid': b.ROOT_UUID, 'raw_bytes': r.RAW_BYTES}
+    b.require(bool(m.get('package_metadata')), 'Source package metadata pins are missing')
+    request['package_metadata'] = m['package_metadata']
     report = nas_operation(request, stage)
     b.require(report.get('cleanup_complete') is True and report.get('bytes') == r.RAW_BYTES
+              and report.get('package_metadata_verified') is True
+              and report.get('package_metadata_files') == len(m['package_metadata'])
               and report.get('root_uuid') == b.ROOT_UUID and report.get('usb_root_uuid') == m['usb_root_uuid']
               and isinstance(report.get('sha256'), str) and re.fullmatch('[0-9a-f]{64}', report['sha256']),
               'NAS payload checksum report does not match this image')
@@ -253,10 +258,10 @@ def runtime_copy(source, root, stage):
         clear_child(state, name.name)
 
 
-def copy_system(source, destination, log_path):
+def copy_system(source, destination, log_path, checksum=False):
     """Use rsync's normal size/mtime quick check, including on the final pass."""
     with log_path.open('w') as log:
-        result = subprocess.run([*b.RSYNC, '--stats', str(source).rstrip('/') + '/',
+        result = subprocess.run([*b.RSYNC, *(['--checksum'] if checksum else []), '--stats', str(source).rstrip('/') + '/',
                                  str(destination) + '/'], stdout=log, stderr=subprocess.STDOUT)
     b.require(result.returncode == 0, 'System file copy failed')
 
@@ -293,13 +298,15 @@ def capture(image, stage, m, printer_context):
                     with timed(stage, 'application_pause_and_resume'), b.quiesced(stage):
                         b.phase(stage, 'Consistent system copy; application writers are paused')
                         with timed(stage, 'consistent_rsync'):
-                            copy_system(Path('/'), saved, stage / 'reports/rsync-final.txt')
+                            copy_system(Path('/'), saved, stage / 'reports/rsync-final.txt',
+                                        checksum=m.get('verify_source_contents', False))
                         with timed(stage, 'boot_files_copy'):
                             bootfat = inputs / 'fat'
                             bootfat.mkdir()
                             b.command('rsync', '-rt', '--delete', '--modify-window=1', '/boot/emmc/', str(bootfat) + '/')
                         with timed(stage, 'root_comparison'):
-                            comparison = b.comparison_result(b.run(*b.RSYNC, '--dry-run', '--itemize-changes', '/', str(saved) + '/'))
+                            checks = ['--checksum'] if m.get('verify_source_contents') else []
+                            comparison = b.comparison_result(b.run(*b.RSYNC, *checks, '--dry-run', '--itemize-changes', '/', str(saved) + '/'))
                             b.record(stage / 'reports/root-comparison.json', comparison)
                             b.require(not comparison['blocking'], 'Source changed during the final copy')
                         with timed(stage, 'boot_validation_and_inputs'):
@@ -315,6 +322,10 @@ def capture(image, stage, m, printer_context):
                             b.require(policy.is_file() and 'd /var/log/nginx 0755 root adm -' in policy.read_text(), 'nginx log recovery policy missing')
                         with timed(stage, 'payload_sync'):
                             b.command('sync', '-f', saved)
+                        m['package_metadata'] = nas.package_metadata(Path('/'))
+                        b.record(stage / 'reports/source-package-metadata.json',
+                                 {'status': 'PASS', 'files': len(m['package_metadata']),
+                                  'source_content_checksums': bool(m.get('verify_source_contents'))})
                 b.record(stage / 'reports/source.json', identity)
             # Klipper and application services are restored before offline work.
             b.phase(stage, 'Reclaiming unused blocks in the saved filesystem')

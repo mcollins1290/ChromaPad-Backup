@@ -6,6 +6,7 @@ import datetime
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -23,7 +24,7 @@ STATE = DEST / 'coprint-debian.json'
 INFO = DEST / 'backup-info'
 DEPENDENCIES = ('ssh', 'rsync', 'mkimage', 'fdtget', 'readelf', 'losetup', 'mount', 'umount',
                 'unshare', 'cpio', 'gzip', 'fsck.vfat', 'e2fsck', 'mkfs.vfat',
-                'mkfs.ext4', 'resize2fs', 'fstrim', 'blkid', 'findmnt', 'chroot')
+                'mkfs.ext4', 'resize2fs', 'fstrim', 'blkid', 'findmnt', 'chroot', 'journalctl')
 
 
 def require(ok, message):
@@ -93,12 +94,16 @@ def readiness(rolling):
     old = rolling.b.run('systemctl', 'show', 'chromapad-debian-recovery-backup.service', '-p', 'ActiveState', '--value')
     require(old not in ('active', 'activating', 'deactivating'), 'The older backup service is running')
     rolling.b.source_identity(printers_stopped=False)
+    source_metadata = rolling.nas.package_metadata(Path('/'))
     rolling.nas_preflight()
     checked = printers.plan()
     return {'status': 'PLAN_ONLY', 'image': str(IMAGE), 'destination': str(DEST / 'coprint.img'),
             'mode': 'UPDATE_IN_PLACE' if record else 'CREATE_FIRST_DEBIAN_IMAGE',
             'nas_free_required_bytes': needed, 'pad_scratch_required_bytes': 1536 * 1024 ** 2,
             'dated_images_created': False, 'stock_fallback_preserved': True,
+            'source_package_metadata_files': len(source_metadata),
+            'image_state': record.get('state') if record else 'NOT_CREATED',
+            'requires_source_content_checksums': needs_content_check(record),
             'writes_performed': False, 'previous': before, **checked}, record
 
 
@@ -171,6 +176,28 @@ def capacity_for_growth(used, free, source_growth):
     return 0 if free >= required else ((required-free+quantum-1)//quantum)*quantum
 
 
+def needs_content_check(record):
+    return record is None or record.get('state') != 'READY' or record.get('needs_source_checksum', False)
+
+
+def kernel_checkpoint(rolling):
+    line = rolling.b.run('journalctl', '-k', '-n', '1', '-o', 'json', '--no-pager')
+    require(bool(line), 'Kernel journal is unavailable; cannot monitor backup storage errors')
+    return json.loads(line)['__CURSOR']
+
+
+def check_kernel_storage(rolling, stage, cursor):
+    output = rolling.b.run('journalctl', '-k', '--after-cursor', cursor, '-o', 'json', '--no-pager')
+    pattern = r'I/O error|lost async page write|critical space allocation error|failed to convert unwritten extents|EXT4-fs (?:error|warning)|EXT4-fs.*(?:Aborting journal|Remounting filesystem read-only)'
+    errors = []
+    for line in output.splitlines():
+        message = str(json.loads(line).get('MESSAGE', ''))
+        if re.search(pattern, message, re.IGNORECASE):
+            errors.append(message)
+    rolling.b.record(stage/'reports/kernel-storage.json', {'status': 'FAIL' if errors else 'PASS', 'errors': errors})
+    require(not errors, 'Kernel reported storage errors during backup: ' + '\n'.join(errors[:5]))
+
+
 def ensure_capacity(rolling, stage, record, owner, source_used):
     c, b = rolling.c, rolling.b
     with c.usb_image(stage, image=IMAGE) as (_, root):
@@ -212,6 +239,8 @@ def run(rolling):
     with Path('/run/lock/chromapad-rolling-backup.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         plan, record = readiness(rolling)
+        verify_contents = needs_content_check(record)
+        cursor = kernel_checkpoint(rolling)
         before = plan['previous']
         source_used = shutil.disk_usage('/').used
         owner = Path(before['target']).stat()
@@ -225,15 +254,19 @@ def run(rolling):
             record = {'kind': 'chromapad-rolling-image', 'image': str(IMAGE),
                       'inode': IMAGE.stat().st_ino, 'bytes': rolling.c.USB_BYTES,
                       'initialized': False, 'geometry': rolling.metadata()}
-        record.update(state='UPDATING', started_utc=stamp(), error=None)
+        record.update(state='UPDATING', started_utc=stamp(), error=None,
+                      needs_source_checksum=verify_contents)
         save_state(record, owner)
         stage = Path(tempfile.mkdtemp(prefix='chromapad-rolling-', dir='/var/tmp'))
         (stage / 'reports').mkdir()
         try:
             m = {**record['geometry'], 'stage': str(stage),
+                 'verify_source_contents': verify_contents,
                  'build_id': 'debian-recovery-' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}
             print('BACKUP_WORK=' + str(stage), flush=True)
             print('Updating one rolling Debian recovery image. Do not copy it until completion.', flush=True)
+            if verify_contents:
+                print('Full source content checksums required for initial capture or recovery after failure.', flush=True)
             try:
                 with rolling.timed(stage, 'backup_work_total'):
                     if not record['initialized']:
@@ -248,9 +281,11 @@ def run(rolling):
                             ensure_capacity(rolling, stage, record, owner, source_used)
                     with rolling.timed(stage, 'capture_total'):
                         rolling.capture(IMAGE, stage, m, printers.stopped_printers)
+                    check_kernel_storage(rolling, stage, cursor)
                     rolling.b.phase(stage, 'Building and checking the recovery boot environment')
                     with rolling.timed(stage, 'finish_total'):
                         result = rolling.finish(IMAGE, stage, m)
+                    check_kernel_storage(rolling, stage, cursor)
             finally:
                 cleanup_stage(rolling, stage, owner)
             # In-place modification necessarily changes the previous target's
@@ -262,12 +297,20 @@ def run(rolling):
                         'Current image identity changed during update')
                 before = now
             activate(before, IMAGE)
-            record.update(state='READY', completed_utc=stamp(), result=result, source_used_bytes=source_used)
+            record.update(state='READY', completed_utc=stamp(), result=result, source_used_bytes=source_used,
+                          needs_source_checksum=False)
+            if verify_contents:
+                record['last_source_checksum_utc'] = stamp()
+                if isinstance(record.get('integrity_incident'), dict):
+                    record['integrity_incident'].update(
+                        next_backup_requires_content_checksums=False,
+                        checksum_recaptured_utc=record['last_source_checksum_utc'],
+                        resolved_by_build_id=result['build_id'])
             save_state(record, owner)
             print(json.dumps(result, indent=2), flush=True)
             print('BACKUP_COMPLETE_PRINTERS_RESTORED', flush=True)
         except BaseException as exc:
-            record.update(state='FAILED', failed_utc=stamp(), error=str(exc))
+            record.update(state='FAILED', failed_utc=stamp(), error=str(exc), needs_source_checksum=True)
             save_state(record, owner)
             print('Backup failed. The rolling image is not ready to use: ' + str(exc), flush=True)
             raise

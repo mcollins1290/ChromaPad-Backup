@@ -114,6 +114,20 @@ class RuntimeRefreshTests(unittest.TestCase):
 
 
 class RawPayloadTests(unittest.TestCase):
+    def test_checksum_recovery_repairs_zero_data_with_unchanged_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base=Path(tmp);source=base/'source';target=base/'target'
+            source.mkdir();target.mkdir()
+            file=source/'settings';file.write_bytes(b'known good data\n')
+            rolling.copy_system(source,target,base/'first.log')
+            saved=target/'settings';before=saved.stat()
+            saved.write_bytes(b'\0'*file.stat().st_size)
+            os.utime(saved,ns=(before.st_atime_ns,before.st_mtime_ns))
+            rolling.copy_system(source,target,base/'quick.log')
+            self.assertNotEqual(file.read_bytes(),saved.read_bytes())
+            rolling.copy_system(source,target,base/'recovery.log',checksum=True)
+            self.assertEqual(file.read_bytes(),saved.read_bytes())
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

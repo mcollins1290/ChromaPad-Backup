@@ -24,6 +24,16 @@ def main():
       payload=bundle/'root.ext4'
       with payload.open('xb') as stream:stream.truncate(64*1024**2)
       c.b.command('mkfs.ext4','-q','-F','-U',c.b.ROOT_UUID,payload)
+      inner=stage/'seed-inner';inner.mkdir()
+      inner_loop=c.b.run('losetup','--find','--show',payload)
+      try:
+       c.b.command('mount',inner_loop,inner)
+       try:
+        database=inner/'var/lib/dpkg';(database/'info').mkdir(parents=True)
+        (database/'status').write_text('Package: fixture\nStatus: install ok installed\n')
+        (database/'info/fixture.list').write_text('/.\n')
+       finally:c.b.command('umount',inner)
+      finally:c.b.command('losetup','-d',inner_loop)
       (bundle/'manifest.json').write_text('fixture manifest')
       test=root/'fixture';test.write_bytes(b'payload preserved');test.chmod(0o640);os.chown(test,1000,1000)
       os.setxattr(test,'user.fixture',b'preserved');os.link(test,root/'hardlink');(root/'symlink').symlink_to('/fixture')

@@ -14,7 +14,8 @@ from recovery_build_common import b
 
 def main():
     b.require(os.geteuid() == 0, 'This file-backed integration test needs root for loop mounts')
-    with tempfile.TemporaryDirectory(prefix='chromapad-rolling-fixture-', dir='/var/tmp') as temp:
+    with tempfile.TemporaryDirectory(prefix='chromapad-rolling-fixture-',
+                                     dir=os.environ.get('CHROMAPAD_TEST_WORKDIR', '/var/tmp')) as temp:
         stage = Path(temp)
         (stage / 'reports').mkdir()
         image = stage / 'only-recovery.img'

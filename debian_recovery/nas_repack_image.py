@@ -77,6 +77,7 @@ def repack(request):
             h.require(total < request['image_bytes'], 'Recreation would not reduce the image')
             h.require(not CANDIDATE.exists() and not CANDIDATE.is_symlink(), 'Rebuild candidate already exists')
             h.require(shutil.disk_usage(h.IMAGE.parent).free > total + 1024 ** 3, 'Insufficient NAS workspace')
+            h.verify_package_metadata(source / 'opt/chromapad-recovery/root.ext4', request)
             with h.IMAGE.open('rb') as src, CANDIDATE.open('xb') as dst:
                 os.fchmod(dst.fileno(), 0o600)
                 os.fchown(dst.fileno(), before.st_uid, before.st_gid)

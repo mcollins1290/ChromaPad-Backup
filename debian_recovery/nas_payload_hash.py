@@ -17,6 +17,57 @@ IMAGE = Path('/media/raid1/coprint/coprint-debian.img')
 LOCK = Path('/run/lock/chromapad-payload-hash.lock')
 
 
+def package_metadata(root):
+    """Content pins for dpkg's text databases; NUL bytes are never valid here."""
+    root = Path(root).resolve()
+    database = root / 'var/lib/dpkg'
+    require((database / 'status').is_file() and (database / 'status').stat().st_size > 0
+            and (database / 'info').is_dir(), 'Package database is missing')
+    files = [database / name for name in ('status', 'status-old', 'arch', 'available', 'diversions', 'diversions-old',
+                                         'statoverride', 'statoverride-old') if (database / name).exists()]
+    for name in ('info', 'alternatives', 'triggers', 'updates'):
+        folder = database / name
+        if folder.exists():
+            files.extend(p for p in folder.iterdir() if p.is_file())
+    result = {}
+    for path in sorted(files):
+        require(not path.is_symlink() and path.resolve().is_relative_to(root), 'Unsafe package metadata path')
+        value = hashlib.sha256()
+        with path.open('rb') as stream:
+            while block := stream.read(1024 ** 2):
+                require(b'\0' not in block, 'NUL bytes in package metadata: ' + str(path.relative_to(root)))
+                value.update(block)
+        result[str(path.relative_to(root))] = value.hexdigest()
+    return result
+
+
+def verify_package_metadata(payload, request, expected=None):
+    """Mount the clean saved filesystem read-only and inspect actual disk data."""
+    info = payload.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_size == request['raw_bytes']
+            and payload.resolve() == payload, 'Unsafe saved metadata filesystem')
+    point = Path(tempfile.mkdtemp(prefix='chromapad-nas-metadata-'))
+    loop, mounted = None, False
+    try:
+        loop = run('losetup', '--find', '--show', '--read-only', payload)
+        require(run('losetup', '-n', '-O', 'BACK-FILE', loop) == str(payload), 'Wrong metadata loop')
+        require(run('blkid', '-p', '-c', '/dev/null', '-s', 'UUID', '-o', 'value', loop) == request['root_uuid'],
+                'Wrong metadata filesystem UUID')
+        subprocess.run(['mount', '-t', 'ext4', '-o', 'ro,noload,nosuid,nodev,noexec', loop, str(point)], check=True)
+        mounted = True
+        actual = package_metadata(point)
+        if expected is not None and actual != expected:
+            changed = sorted(name for name in set(actual) | set(expected) if actual.get(name) != expected.get(name))
+            raise RuntimeError('Saved package metadata differs from the paused source: ' + ', '.join(changed[:10]))
+        return actual
+    finally:
+        if mounted:
+            subprocess.run(['umount', str(point)], check=True)
+        if loop:
+            subprocess.run(['losetup', '-d', loop], check=True)
+        point.rmdir()
+
+
 def require(ok, message):
     if not ok:
         raise RuntimeError(message)
@@ -98,6 +149,8 @@ def hash_image(request):
             bundle = point / 'opt/chromapad-recovery'
             require(bundle.resolve() == bundle, 'Symlinked NAS payload directory')
             result = hash_file(bundle / 'root.ext4', request)
+            metadata = verify_package_metadata(bundle / 'root.ext4', request, request.get('package_metadata'))
+            result.update(package_metadata_verified=True, package_metadata_files=len(metadata))
             after = image_identity(IMAGE, request)
             require((before.st_size, before.st_mtime_ns, before.st_ctime_ns) ==
                     (after.st_size, after.st_mtime_ns, after.st_ctime_ns), 'NAS image changed during hashing')

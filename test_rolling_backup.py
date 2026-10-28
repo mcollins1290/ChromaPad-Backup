@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 import rolling_backup as p
 import recreate_recovery_image as recreate
+import types
 
 
 class RollingOwnershipTests(unittest.TestCase):
@@ -115,6 +116,25 @@ class RollingOwnershipTests(unittest.TestCase):
         self.assertEqual(p.capacity_for_growth(12*gib, 3*gib, 0), 0)
         self.assertEqual(p.capacity_for_growth(12*gib, 3*gib, -gib), 0)
         self.assertEqual(p.capacity_for_growth(12*gib, 3*gib, gib), gib//2)
+
+    def test_failed_or_interrupted_backups_require_content_checks(self):
+        self.assertTrue(p.needs_content_check(None))
+        self.assertTrue(p.needs_content_check({'state':'FAILED'}))
+        self.assertTrue(p.needs_content_check({'state':'UPDATING'}))
+        self.assertTrue(p.needs_content_check({'state':'READY','needs_source_checksum':True}))
+        self.assertFalse(p.needs_content_check({'state':'READY'}))
+
+    def test_storage_errors_fail_even_when_copy_commands_succeeded(self):
+        (self.root/'reports').mkdir()
+        fake = types.SimpleNamespace(b=types.SimpleNamespace(run=lambda *args: json.dumps({'MESSAGE':
+            'EXT4-fs (loop2): failed to convert unwritten extents to written extents -- potential data loss!'}),
+            record=lambda path,data:path.write_text(json.dumps(data))))
+        with self.assertRaisesRegex(RuntimeError, 'Kernel reported storage errors'):
+            p.check_kernel_storage(fake, self.root, 'cursor')
+        report=json.loads((self.root/'reports/kernel-storage.json').read_text())
+        self.assertEqual(report['status'], 'FAIL')
+        fake.b.run=lambda *args: json.dumps({'MESSAGE':'hid-multitouch: device initialized'})
+        p.check_kernel_storage(fake, self.root, 'cursor')
 
     def test_recreation_publishes_only_the_verified_candidate_and_preserves_snapshot(self):
         record = self.owned()

@@ -148,9 +148,11 @@ After capture, runtime refresh and the saved-filesystem check, the pad syncs
 and unmounts all image filesystems and detaches its loops. It then sends the
 pinned `nas_payload_hash.py` helper over SSH. In a private mount namespace,
 the NAS checks the image identity, partition geometry and filesystem UUIDs,
-mounts only the outer recovery filesystem read-only without journal replay,
-and hashes every byte of the saved payload with SHA-256. It returns the result
-only after unmounting and detaching its loop. Packaging then resumes on the pad.
+mounts the outer recovery filesystem read-only without journal replay,
+and hashes every byte of the saved payload with SHA-256. It also mounts the
+saved filesystem read-only and compares its package database with SHA-256
+pins taken from the paused source. It returns the result only after unmounting
+and detaching both loops, inner first. Packaging then resumes on the pad.
 The recovery format, pre-restore checksum and restored-byte readback are unchanged.
 
 The NAS requires `python3`, `unshare`, `losetup`, `blkid`, `mount` and `umount`.
@@ -163,7 +165,7 @@ The full helper operation has a 30-minute timeout.
 
 A read-only benchmark on the same verified image took about 3m40s including
 SSH, versus 8m57s when hashed on the pad, with identical checksums. A complete
-backup with this integration is still needed to measure total runtime.
+backup duration also depends on the source-content and metadata checks below.
 
 ## Single consistent system copy
 
@@ -173,6 +175,40 @@ it scanned the whole tree even for tiny updates and printers were already
 stopped during it. No source paths or metadata checks were dropped. Boot
 checks, source identity checks, final sync, NAS payload hashing and restore
 verification are unchanged.
+
+Initial captures and retries after any failed/interrupted backup use rsync
+content checksums for both copying and comparison. A persistent
+`needs_source_checksum` flag clears only after the entire backup succeeds.
+Routine updates after a verified success retain size/mtime quick checks.
+
+This distinction matters after storage exhaustion: a failed write can leave
+an allocated file full of zeros while its size and timestamp still match the
+source. Resizing the container and retrying with only size/mtime checks does
+not repair that file. A whole-payload checksum verifies the bytes in the
+snapshot, not their equality to the live source.
+
+The controller rejects NUL-filled package databases before starting, pins
+their contents while application/package writers are paused, and requires
+the NAS's independent read-only metadata comparison to pass. Kernel storage
+errors since the start of the backup also prevent publication, even if copy
+commands returned success. `source-package-metadata.json`, `payload-hash.json`
+and `kernel-storage.json` retain the relevant verification results. Source
+metadata covers dpkg status/diversions/overrides, package information files,
+alternatives, triggers and pending-update records. This targeted check complements content recovery
+after failures; it is not a full source-content comparison on routine runs.
+
+During the 2026-10-28 post-restore investigation, 733 package database files
+were found filled with zeros in both the saved filesystem and restored pad.
+Historical logs from the earlier capacity failure contained lost-write errors
+whose inode numbers matched affected alternatives records. Inspection found
+allocated, unwritten extents, consistent with those failed writes.
+File size, timestamps and filesystem structural checks did not reveal the loss.
+Metadata was repaired from exact-version, repository-SHA-256-verified Debian archives
+and matching intact database backups. A subsequent audit checked 92,140
+package payload files without mismatches or missing files. The affected NAS
+snapshot was marked failed and requires checksum-based recapture; successful
+boot and a matching payload checksum alone were insufficient evidence of
+source-content integrity.
 
 This avoids one scan (about 84 seconds in the preceding full backup), but
 actual savings depend on changed data and cache state. Application writers
