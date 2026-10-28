@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import rolling_backup as p
+import recreate_recovery_image as recreate
 
 
 class RollingOwnershipTests(unittest.TestCase):
@@ -108,6 +109,52 @@ class RollingOwnershipTests(unittest.TestCase):
         anchor.symlink_to(self.image.name)
         with patch.object(p, 'DEST', self.root), self.assertRaisesRegex(RuntimeError, 'changed'):
             p.activate(before, self.image)
+
+    def test_capacity_policy_grows_only_when_free_space_is_insufficient(self):
+        gib = 1024**3
+        self.assertEqual(p.capacity_for_growth(12*gib, 3*gib, 0), 0)
+        self.assertEqual(p.capacity_for_growth(12*gib, 3*gib, -gib), 0)
+        self.assertEqual(p.capacity_for_growth(12*gib, 3*gib, gib), gib//2)
+
+    def test_recreation_publishes_only_the_verified_candidate_and_preserves_snapshot(self):
+        record = self.owned()
+        record.update(state='READY', result={'bytes': self.size, 'root_sha256': 'saved'})
+        self.state.write_text(json.dumps(record))
+        candidate = self.root/'.coprint-debian.rebuild.img'
+        candidate.write_bytes(b'new container')
+        result = {'candidate_inode': candidate.stat().st_ino, 'image_bytes': candidate.stat().st_size,
+                  'candidate_mtime_ns': candidate.stat().st_mtime_ns}
+        with patch.object(p, 'IMAGE', self.image), patch.object(p, 'STATE', self.state):
+            updated = recreate.publish(candidate, record, result, self.image.stat())
+        self.assertEqual(self.image.read_bytes(), b'new container')
+        self.assertEqual(updated['result']['root_sha256'], 'saved')
+        self.assertEqual(updated['state'], 'READY')
+        self.assertFalse(candidate.exists())
+        self.assertFalse((self.root/'.coprint-debian.previous.img').exists())
+
+    def test_recreation_failed_publication_restores_the_old_image(self):
+        record = self.owned()
+        record.update(state='READY', result={'bytes': self.size})
+        self.state.write_text(json.dumps(record))
+        candidate = self.root/'.coprint-debian.rebuild.img'
+        candidate.write_bytes(b'new container')
+        result = {'candidate_inode': candidate.stat().st_ino, 'image_bytes': candidate.stat().st_size,
+                  'candidate_mtime_ns': candidate.stat().st_mtime_ns}
+        original = p.save_state
+        calls = 0
+        def fail_once(rec, owner):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise OSError('publication failed')
+            original(rec, owner)
+        with patch.object(p, 'IMAGE', self.image), patch.object(p, 'STATE', self.state), \
+                patch.object(p, 'save_state', side_effect=fail_once):
+            with self.assertRaises(OSError):
+                recreate.publish(candidate, record, result, self.image.stat())
+        self.assertEqual(self.image.stat().st_ino, record['inode'])
+        self.assertEqual(json.loads(self.state.read_text()), record)
+        self.assertTrue(candidate.exists())
 
 
 if __name__ == '__main__':

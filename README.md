@@ -218,3 +218,42 @@ planning dominated and archive retrieval/verification took only 0.7s. Combining
 reads and batching dependency checks reduced a warm-cache prototype from
 4.8s to 3.0s with identical fingerprints. Normal backup timings are needed to
 measure the saving with colder filesystem caches.
+
+## Recreate a smaller recovery container
+
+`sudo python3 /usr/local/lib/chromapad-backup-promoter/recreate_recovery_image.py`
+reports a proposed capacity without changing the image. Add `--run` to recreate
+the last verified `READY` snapshot in a freshly formatted container on the NAS.
+This preserves the snapshot's date and contents; it does not capture a new
+backup. The existing image stays available until the replacement is verified.
+
+Capacity uses the snapshot's allocated filesystem space, plus 15% or 1 GiB
+free (whichever is larger), another 256 MiB for filesystem metadata, rounded
+up to 512 MiB. The boot partition and all restore identities remain unchanged.
+The NAS copies files with sparse-file support, compares every file's content
+and metadata, checks the full raw payload SHA-256 against the verified pin,
+and checks the new unmounted filesystem before publication. This recreates
+the filesystem rather than shrinking it. A temporary second image requires
+additional NAS space during the operation. Only the verified replacement is
+retained after successful publication.
+
+The controller accepts the recorded capacity while retaining fixed boot
+partition offsets and strict ownership/identity checks. Later backups never
+shrink it: if available space cannot cover a free-space floor and twice the
+increase in source filesystem usage since the previous capture, the container
+is enlarged in 512 MiB steps. This budgets growth in both the saved system
+and recovery runtime. It is conservative because transient source files may
+also contribute to filesystem usage. An unusually large change during a run
+can still exhaust capacity and fail safely; recreation does not remove the
+separate recovery environment.
+
+An interrupted recreation leaves the current image intact before publication.
+A publication journal and previous-image link protect the replacement step;
+if those remain after interruption, inspect them before retrying. Do not use
+a partially built `.coprint-debian.rebuild.img`. Physical USB boot/restore
+validation remains a separate check after changes to the container layout.
+
+`sudo python3 test_recreate_filesystems.py` exercises recreation, complete
+content comparison, checksum verification and subsequent growth on disposable
+file-backed filesystems. It requires the installed private boot prefix and
+never accesses the device's eMMC as a restore target.

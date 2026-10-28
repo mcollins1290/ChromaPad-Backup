@@ -9,6 +9,28 @@ import uuid
 from unittest.mock import patch
 import chromapad_recovery as r
 import rolling_recovery as rolling
+import nas_repack_image as repack
+
+
+class CapacityTests(unittest.TestCase):
+    def test_fresh_capacity_has_reserve_and_is_rounded(self):
+        used = 13136920576
+        size = repack.capacity(used)
+        self.assertEqual(size % (512*1024**2), 0)
+        self.assertGreater(size-used, 1024**3)
+        self.assertLess(size, 24*1024**3)
+
+    def test_owned_geometry_keeps_boot_offsets_and_rejects_unaligned_sizes(self):
+        c = rolling.c
+        original = c.USB_BYTES
+        self.addCleanup(c.configure_layout, original)
+        total = 1050624*512 + 15*1024**3
+        c.configure_layout(total)
+        self.assertEqual(c.USB_BYTES, total)
+        self.assertEqual(c.USB_PARTS, [(2048,1048576),(1050624,15*1024**3//512)])
+        for bad in (total+1, 1050624*512, 1050624*512+129*1024**3):
+            with self.assertRaises(RuntimeError):
+                c.configure_layout(bad)
 
 
 class PhaseTimingTests(unittest.TestCase):

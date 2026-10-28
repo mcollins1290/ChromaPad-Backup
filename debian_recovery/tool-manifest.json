@@ -22,7 +22,7 @@
     "probe-emmc-guard.sh": "c1be14db398dc4690f3592b4afec754d127579803d8fa789e7d2b84516302b16",
     "protected-reference.json": "1d84c1b7900bbcc36d9eeb91ccb7bada49889f7e57948fb0aa24daf7650c5757",
     "publish-recovery-image.py": "40f31557cc18bdce020094f88ce6109b635837c7dd17a96dcdb7e750f79e3ed4",
-    "recovery_build_common.py": "268d09a968eae113ebb7572351d481352a7ace731e1d8074d324438e7b8de31b",
+    "recovery_build_common.py": "41de7833bbe2799fd9aea28bec8b73bd77cd31271a92b7e15819e64d36422214",
     "recovery_ram_launcher.py": "1724484b7b7ab7c3579c35d12a272e2a02e2004385b2debe58f6949591952866",
     "recovery_shutdown.py": "ad2509421d0c8a964b39a4f3e5eb8b2d37f30d1ade5a4484874e639618b05cb8",
     "recovery_ui.py": "780c250d6debaa180322603be578931c33b5911ee1e03d5f63fed45388e24609",
@@ -36,12 +36,13 @@
     "test_debian_backup.py": "b3f5eb5fd3f127efbc90208191bd574c8b0ed6c8ab14a7b6e3b2ec53eb7b8f06",
     "validate-recovery-image.py": "979ad3e7e07361f0be053c9efa92f459fb371da278e1d57322e8d8544a0d3623",
     "rolling_recovery.py": "9ea8916a768ace44382ba28b342b652b2e58b675d4952f2d345d5dce7159f30e",
-    "test-rolling-recovery.py": "d15377bd41ec02e08ec8bcf245fc48b5f3352a9573c9f5e619cf1ca1febb1cec",
+    "test-rolling-recovery.py": "164cad8263f4923875f4e5e4d9ab27cd257855e7c6919303d812606d8ff8648d",
     "test-rolling-filesystems.py": "01058cd22a817cc28422cb6e42c919d40e65f3b9f0d00ed93e95d503dcb1bc55",
     "nas_payload_hash.py": "821042f43de953459c9562ac50c25d12559ac137a8cf69e8ce68f7623422b01a",
     "test-nas-payload-hash.py": "ec80ddb8f5f15706a1b3d6c7cab31335b92c21877bb99d510e7772f78f7009a5",
     "recovery_artifacts.py": "de1ccf6370bbd667fade322c30e9149d2b076c20c58c4eeb2e2d00924db269a3",
     "recovery_initramfs.py": "275de8fec32d3188e97177fd0bfffa6cbdcf4fa6e6aa0ee2cc6eb3e754c533f5",
-    "test-recovery-artifacts.py": "2b4148dfd759655ed08c83353733f5a8d45d82bfa8d8a11da73c518f4c2ccc5a"
+    "test-recovery-artifacts.py": "2b4148dfd759655ed08c83353733f5a8d45d82bfa8d8a11da73c518f4c2ccc5a",
+    "nas_repack_image.py": "777c4d4df9cbcf459251d72ac2bf4f2f4a90cd84d95fe3dfae1d8f1c55c03a28"
   }
 }

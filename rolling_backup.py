@@ -62,6 +62,9 @@ def load_builder():
     import chromapad_recovery_backup as workflow
     import rolling_recovery as rolling
     workflow.verify_tools(source)
+    if IMAGE.exists() or IMAGE.is_symlink():
+        record = managed_record(IMAGE, STATE, IMAGE.lstat().st_size)
+        rolling.c.configure_layout(record['bytes'])
     return rolling
 
 
@@ -160,6 +163,49 @@ def cleanup_stage(rolling, stage, owner):
         shutil.rmtree(stage)
 
 
+def capacity_for_growth(used, free, source_growth):
+    """Budget both saved-system and runtime growth; never shrink an image."""
+    reserve = max(1024 ** 3, (used + 9) // 10)
+    required = 2 * max(0, source_growth) + reserve
+    quantum = 512 * 1024 ** 2
+    return 0 if free >= required else ((required-free+quantum-1)//quantum)*quantum
+
+
+def ensure_capacity(rolling, stage, record, owner, source_used):
+    c, b = rolling.c, rolling.b
+    with c.usb_image(stage, image=IMAGE) as (_, root):
+        usage = shutil.disk_usage(root)
+    growth = source_used-record.get('source_used_bytes', source_used)
+    extra = capacity_for_growth(usage.used, usage.free, growth)
+    if not extra:
+        return
+    require(shutil.disk_usage(DEST).free > extra+512*1024**2, 'Insufficient NAS space for recovery growth')
+    new_bytes = record['bytes']+extra
+    # Validate the prospective geometry before making any changes.
+    c.configure_layout(new_bytes)
+    print('Growing recovery container by %.2f GiB' % (extra/1024**3), flush=True)
+    import struct
+    with IMAGE.open('r+b', buffering=0) as stream:
+        prefix = bytearray(stream.read(512))
+        require(struct.unpack_from('<II', prefix, 470) == (1050624, (record['bytes']-1050624*512)//512),
+                'Unexpected recovery partition before growth')
+        stream.truncate(new_bytes)
+        struct.pack_into('<II', prefix, 470, *c.USB_PARTS[1])
+        stream.seek(0)
+        stream.write(prefix)
+        os.fsync(stream.fileno())
+    record['bytes'] = new_bytes
+    save_state(record, owner)
+    start, sectors = c.USB_PARTS[1]
+    loop = b.run('losetup', '--find', '--show', '--offset', start*512, '--sizelimit', sectors*512, IMAGE)
+    try:
+        require(b.run('losetup', '-n', '-O', 'BACK-FILE', loop) == str(IMAGE), 'Wrong growth loop')
+        b.command('resize2fs', loop)
+        b.command('e2fsck', '-f', '-n', loop)
+    finally:
+        b.cleanup_image(IMAGE, [loop], [])
+
+
 def run(rolling):
     # The NAS automount is resolved by readiness() before this namespace fork.
     rolling.c.private()
@@ -167,6 +213,7 @@ def run(rolling):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         plan, record = readiness(rolling)
         before = plan['previous']
+        source_used = shutil.disk_usage('/').used
         owner = Path(before['target']).stat()
         if record is None:
             with IMAGE.open('xb') as f:
@@ -197,6 +244,8 @@ def run(rolling):
                     else:
                         with rolling.timed(stage, 'outer_filesystem_checks'):
                             rolling.check_filesystems(IMAGE, stage, repair=True)
+                        with rolling.timed(stage, 'capacity_check_and_growth'):
+                            ensure_capacity(rolling, stage, record, owner, source_used)
                     with rolling.timed(stage, 'capture_total'):
                         rolling.capture(IMAGE, stage, m, printers.stopped_printers)
                     rolling.b.phase(stage, 'Building and checking the recovery boot environment')
@@ -208,11 +257,12 @@ def run(rolling):
             # size/mtime identity. Require the link and inode to stay the same.
             now = anchor_identity(DEST)
             if before['target'] == str(IMAGE):
-                require(all(now[k] == before[k] for k in ('link', 'target', 'device', 'inode', 'bytes')),
+                expected = {**before, 'bytes': record['bytes']}
+                require(all(now[k] == expected[k] for k in ('link', 'target', 'device', 'inode', 'bytes')),
                         'Current image identity changed during update')
                 before = now
             activate(before, IMAGE)
-            record.update(state='READY', completed_utc=stamp(), result=result)
+            record.update(state='READY', completed_utc=stamp(), result=result, source_used_bytes=source_used)
             save_state(record, owner)
             print(json.dumps(result, indent=2), flush=True)
             print('BACKUP_COMPLETE_PRINTERS_RESTORED', flush=True)

@@ -9,6 +9,16 @@ TOOLS=Path(os.environ.get('CHROMAPAD_BUILD_TOOLS','/var/tmp/chromapad-build-tool
 LEGACY_USB_PARTS=[(2048,1048576),(1050624,25165824)]
 USB_PARTS=[(2048,1048576),(1050624,50331648)]
 USB_BYTES=sum(USB_PARTS[1])*512
+
+def configure_layout(image_bytes):
+    """Select an owned image's capacity without relaxing its fixed boot layout."""
+    global USB_PARTS,USB_BYTES
+    root_bytes=image_bytes-1050624*512
+    b.require(type(image_bytes) is int and 1024**3<=root_bytes<=128*1024**3
+              and root_bytes%(512*1024**2)==0,'Unsupported recovery image capacity')
+    USB_PARTS=[(2048,1048576),(1050624,root_bytes//512)]
+    USB_BYTES=image_bytes
+
 NATIVE=platform.machine() in ('aarch64','arm64')
 
 def install_signal_handlers():
