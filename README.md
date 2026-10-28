@@ -226,6 +226,10 @@ reports a proposed capacity without changing the image. Add `--run` to recreate
 the last verified `READY` snapshot in a freshly formatted container on the NAS.
 This preserves the snapshot's date and contents; it does not capture a new
 backup. The existing image stays available until the replacement is verified.
+After first deploying the capacity-aware backup tools, run a normal backup
+before copying the image to a PC or testing a restore. Recreation alone does
+not put the updated tools inside the saved system; an older restored controller
+would still expect the previous fixed image capacity.
 
 Capacity uses the snapshot's allocated filesystem space, plus 15% or 1 GiB
 free (whichever is larger), another 256 MiB for filesystem metadata, rounded
