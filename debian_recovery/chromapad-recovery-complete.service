@@ -11,8 +11,9 @@ ExecStart=/usr/bin/python3 /usr/local/lib/chromapad-recovery/recovery_shutdown.p
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=10
-StandardOutput=journal
-StandardError=journal
+UMask=0077
+StandardOutput=append:/var/lib/chromapad-recovery/completion-service.log
+StandardError=inherit
 
 [Install]
 WantedBy=multi-user.target

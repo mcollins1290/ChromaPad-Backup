@@ -62,6 +62,16 @@ internally for the saved system, recovery environment, and recovery logs.
 Temporary work is cleaned after success or a handled failure; work with a
 surviving mount is retained for inspection rather than removed unsafely.
 
+The completion button writes timestamped startup, verification, display/input,
+and failure events to `/var/lib/chromapad-recovery/completion-events.jsonl` on
+the USB. Each event is flushed and synced, including tracebacks on failure.
+The service also appends stdout/stderr to `completion-service.log` in that
+directory, capturing interpreter errors before the event logger starts.
+These diagnostics do not change the checks required before enabling shutdown.
+They are included in newly built images; existing USB media retain their old
+code until rewritten. A missing button alone does not establish restore failure;
+the matching build's `completed.json` and restore `result.json` record that result.
+
 Write the completed `coprint.img` to USB with an image writer. Booting that USB
 automatically restores the matching pad. The touchscreen shows progress and
 offers shutdown only after successful verification. Shut down, remove USB,

@@ -1,8 +1,36 @@
-import unittest
+import json,os,tempfile,unittest
+from pathlib import Path
 from unittest.mock import patch
 import recovery_shutdown as s
 
 class ShutdownTests(unittest.TestCase):
+    def setUp(self):
+        temporary=tempfile.TemporaryDirectory();self.addCleanup(temporary.cleanup)
+        self.directory=Path(temporary.name)
+        log=patch.object(s,'LOG',self.directory/'completion-events.jsonl');log.start();self.addCleanup(log.stop)
+    def test_checkpoint_is_persistent_json_and_synced(self):
+        with patch.object(s.os,'fsync',wraps=os.fsync) as sync:
+            s.checkpoint('starting');s.checkpoint('button_ready',touch_slots=5)
+        events=[json.loads(line) for line in s.LOG.read_text().splitlines()]
+        self.assertEqual([x['event'] for x in events],['starting','button_ready'])
+        self.assertEqual(events[1]['touch_slots'],5)
+        self.assertEqual(sync.call_count,4)
+        self.assertEqual(s.LOG.stat().st_mode&0o777,0o600)
+    def test_startup_failure_has_durable_traceback_and_is_reraised(self):
+        with patch.object(s,'main',side_effect=RuntimeError('touch device unavailable')):
+            with self.assertRaisesRegex(RuntimeError,'touch device unavailable'):s.run_logged()
+        event=json.loads(s.LOG.read_text())
+        self.assertEqual(event['event'],'failed')
+        self.assertIn('touch device unavailable',event['traceback'])
+    def test_diagnostic_failure_does_not_prevent_completion(self):
+        with patch.object(s,'LOG',self.directory/'missing'/'events'),patch('builtins.print') as output:
+            s.checkpoint('starting')
+        output.assert_called_once()
+    def test_diagnostic_file_does_not_follow_symlinks(self):
+        target=self.directory/'target';target.write_text('original')
+        s.LOG.symlink_to(target)
+        with patch('builtins.print'):s.checkpoint('starting')
+        self.assertEqual(target.read_text(),'original')
     def touch(self,held=False):return s.TouchGesture([dict(id=9 if held else -1,x=500,y=370),dict(id=-1,x=100,y=100)])
     def frame(self,t,events):
         for code,value in events:self.assertIsNone(t.feed(3,code,value))

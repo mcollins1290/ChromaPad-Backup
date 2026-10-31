@@ -4,12 +4,27 @@ Input protocol: https://www.kernel.org/doc/html/latest/input/multi-touch-protoco
 Queue overruns are resynchronized by reopening and querying the device state.
 No restore/write operation is available in this process.
 """
-import fcntl,hashlib,json,os,select,struct,subprocess,time
+import datetime,fcntl,hashlib,json,os,select,struct,subprocess,time,traceback
 from pathlib import Path
 import recovery_ui as ui
 
 BUTTON=(212,320,812,424)
 EVENT=struct.Struct('@llHHi')
+LOG=Path('/var/lib/chromapad-recovery/completion-events.jsonl')
+
+def checkpoint(event,**details):
+    """Flush diagnostic events to USB independently of the system journal."""
+    record={'utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'pid':os.getpid(),'event':event,**details}
+    try:
+        fd=os.open(LOG,os.O_WRONLY|os.O_CREAT|os.O_APPEND|os.O_CLOEXEC|os.O_NOFOLLOW,0o600)
+        with os.fdopen(fd,'a') as stream:
+            stream.write(json.dumps(record)+'\n');stream.flush();os.fsync(stream.fileno())
+        directory=os.open(LOG.parent,os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
+        try:os.fsync(directory)
+        finally:os.close(directory)
+    except Exception as exc:
+        print('Completion diagnostic write failed: '+str(exc),flush=True)
 
 def require(ok,message):
     if not ok:raise RuntimeError(message)
@@ -123,6 +138,7 @@ def render(pressed=False,shutting_down=False,error=None):
 
 def poweroff():
     completed_recovery()
+    checkpoint('poweroff_requested')
     subprocess.run(['systemctl','poweroff'],check=True,timeout=20)
 
 def main():
@@ -131,10 +147,14 @@ def main():
     parser.add_argument('--preview',type=Path)
     args=parser.parse_args()
     if args.preview:render().save(args.preview);return
+    checkpoint('starting')
     completed_recovery()
+    checkpoint('completion_verified')
     fb=ui.Framebuffer();fd=None
+    checkpoint('framebuffer_opened')
     try:
         fd,touch=open_touch();fb.draw(render());last=False;error=None
+        checkpoint('button_ready',touch_slots=len(touch.slots))
         print('Verified recovery complete; touchscreen shutdown button ready.',flush=True)
         while True:
             if not select.select([fd],[],[],1)[0]:continue
@@ -152,6 +172,7 @@ def main():
                         # Remain on the shutdown screen until systemd terminates us.
                         while True:time.sleep(1)
                     except Exception as exc:
+                        checkpoint('poweroff_failed',error=str(exc),traceback=traceback.format_exc())
                         error=str(exc);print('Shutdown request failed: '+error,flush=True)
                         fb.draw(render(error=error));last=False
                 if touch.pressed!=last:
@@ -160,4 +181,11 @@ def main():
         if fd is not None:os.close(fd)
         fb.close()
 
-if __name__=='__main__':main()
+def run_logged():
+    try:main()
+    except BaseException as exc:
+        if not isinstance(exc,SystemExit) or exc.code:
+            checkpoint('failed',error=str(exc),traceback=traceback.format_exc())
+        raise
+
+if __name__=='__main__':run_logged()
